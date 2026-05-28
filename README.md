@@ -16,6 +16,159 @@ To integrate Tranzmit, a customer app needs:
 
 Once the public key and placement are configured in the dashboard, paywall changes and experiment splits flow remotely. The customer should not hardcode paywall UI in their app.
 
+## Client Integration Steps
+
+Use this checklist as the source of truth for customer engineers and AI coding agents.
+
+### Step 1: Get The Tranzmit Inputs
+
+Before editing the app, collect these values from the Tranzmit team:
+
+1. `publicKey`: the dashboard client key, for example `pk_live_...`.
+2. `placementTrigger`: the dashboard trigger to present, for example `upgrade_pro`.
+3. Optional `apiBaseUrl`: only needed if Tranzmit gives you a non-default API URL.
+4. Billing product IDs: the product IDs returned in the paywall CTA must map to the app's StoreKit, Play Billing, RevenueCat, or billing system products.
+
+### Step 2: Add The Flutter Dependency
+
+Add the SDK to the customer app's `pubspec.yaml`:
+
+```yaml
+dependencies:
+  tranzmit_flutter:
+    git:
+      url: https://github.com/agaaz007/tranzmit-flutter-sdk.git
+      ref: main
+```
+
+Then fetch dependencies:
+
+```bash
+flutter pub get
+```
+
+### Step 3: Import The SDK
+
+Import the Dart package with underscores:
+
+```dart
+import 'package:tranzmit_flutter/tranzmit_flutter.dart';
+```
+
+Do not import `tranzmit-flutter-sdk`; that is the GitHub repo name, not the Dart package name.
+
+### Step 4: Wrap The Root App
+
+Place `TranzmitProvider` above every screen that may show a paywall.
+
+```dart
+void main() {
+  runApp(
+    TranzmitProvider(
+      config: const TranzmitConfig(
+        publicKey: 'pk_live_REPLACE_WITH_CUSTOMER_PUBLIC_KEY',
+      ),
+      onError: (error) {
+        debugPrint('[Tranzmit] ${error.code}: ${error.message}');
+      },
+      child: const MyApp(),
+    ),
+  );
+}
+```
+
+### Step 5: Pass User Identity Correctly
+
+If the user is logged out, omit `userId`. The SDK creates and persists a `stableID` automatically.
+
+```dart
+TranzmitConfig(
+  publicKey: 'pk_live_REPLACE_WITH_CUSTOMER_PUBLIC_KEY',
+)
+```
+
+If the user is logged in, pass the real app user ID. Do not generate fake logged-out user IDs.
+
+```dart
+TranzmitConfig(
+  publicKey: 'pk_live_REPLACE_WITH_CUSTOMER_PUBLIC_KEY',
+  userId: currentUser.id,
+  userTraits: {
+    'plan': currentUser.plan,
+    'country': currentUser.country,
+  },
+)
+```
+
+For paywall experiments, Statsig should bucket on the custom ID `stableID`. This keeps logged-out and logged-in requests from the same install in the same experiment bucket.
+
+### Step 6: Present The Paywall At The Upgrade Moment
+
+Call `presentPlacement()` where the app normally starts an upgrade flow.
+
+```dart
+final tranzmit = Tranzmit.of(context);
+
+final result = tranzmit.presentPlacement(
+  'upgrade_pro',
+  onCTA: (product) async {
+    // Tranzmit owns paywall UI. The host app owns native billing.
+    await purchaseWithStoreKitPlayBillingOrRevenueCat(product.id);
+
+    tranzmit.reportConversion({
+      'trigger': 'upgrade_pro',
+      'productId': product.id,
+      'revenue': 999,
+      'currency': 'INR',
+    });
+  },
+);
+
+if (!result.shown) {
+  debugPrint('No active Tranzmit placement for upgrade_pro');
+}
+```
+
+### Step 7: Keep Billing In The Host App
+
+When the paywall CTA is tapped:
+
+1. Start the app's native purchase flow using `product.id`.
+2. Wait for the purchase provider to confirm success.
+3. Grant the entitlement in the app's existing entitlement system.
+4. Call `reportConversion()` only after the purchase succeeds.
+
+Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, restore purchases, or grant entitlements.
+
+### Step 8: Verify The Integration
+
+Run this QA checklist before shipping:
+
+1. Launch the app and confirm there are no `onError` logs.
+2. Confirm `Tranzmit.of(context).isReady` becomes `true`.
+3. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement.
+4. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders.
+5. Tap the CTA and confirm the host purchase flow starts.
+6. Complete a test purchase and confirm `reportConversion()` runs.
+7. Change paywall copy or variants in the Tranzmit dashboard.
+8. Call `await Tranzmit.of(context).refreshConfig()`.
+9. Present the paywall again and confirm the dashboard change appears.
+
+### Step 9: AI Agent Acceptance Criteria
+
+If Claude, Codex, Cursor, or another coding agent implements this SDK, the task is done only when:
+
+1. `pubspec.yaml` contains the `tranzmit_flutter` dependency.
+2. The app imports `package:tranzmit_flutter/tranzmit_flutter.dart`.
+3. `TranzmitProvider` wraps the root widget tree.
+4. The provided `publicKey` is passed to `TranzmitConfig`.
+5. Logged-in users pass a real `userId`; logged-out users do not pass a fake ID.
+6. The app calls `presentPlacement()` with the dashboard trigger.
+7. `onCTA` starts native billing with `product.id`.
+8. `reportConversion()` is called only after billing succeeds.
+9. No hardcoded paywall UI is added to the host app.
+10. The integration has a manual QA path that proves the remote paywall renders.
+
 ## Install
 
 If this SDK is shared as a standalone git repo:
