@@ -15,6 +15,8 @@ export 'src/client.dart'
 export 'src/controller.dart'
     show
         ActivePaywall,
+        FallbackEvent,
+        FallbackReason,
         GateOptions,
         GateResult,
         PresentationMode,

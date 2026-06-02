@@ -13,12 +13,27 @@ Ask the human or project owner for:
 1. `publicKey`: the Tranzmit dashboard public key.
 2. `placementTrigger`: the dashboard trigger, usually `upgrade_pro`.
 3. Optional `apiBaseUrl`: only if Tranzmit provided a non-default API URL.
-4. The app's purchase API: RevenueCat, StoreKit, Google Play Billing, or a custom billing wrapper.
-5. The app's logged-in user model: where the real app user ID is available.
+4. Billing Product ID for each paywall variant. This must match the host app's StoreKit, Play Billing, RevenueCat, or custom billing product/package ID.
+5. The app's purchase API: RevenueCat, StoreKit, Google Play Billing, or a custom billing wrapper.
+6. The app's logged-in user model: where the real app user ID is available.
 
 If `publicKey` or `placementTrigger` is missing, stop and ask. Do not invent them.
 
-### Step 2: Add The Dependency
+### Step 2: Confirm Dashboard Product IDs
+
+Before wiring billing, confirm each Tranzmit paywall variant has **Billing Product ID** set in the dashboard.
+
+Examples:
+
+1. StoreKit: `com.customer.app.pro.yearly`.
+2. Google Play Billing: `pro_yearly`.
+3. RevenueCat: the product/package ID passed into the customer's RevenueCat purchase call.
+
+This dashboard value becomes `spec.products[0].id`. On CTA, the SDK calls `onCTA(product)` and `product.id` is the value the app must use for billing.
+
+If the product ID is missing or wrong, stop and ask the human to fix the dashboard config. Do not hardcode a different billing product ID in the app.
+
+### Step 3: Add The Dependency
 
 Edit the host app's `pubspec.yaml`:
 
@@ -36,7 +51,7 @@ Run:
 flutter pub get
 ```
 
-### Step 3: Import The SDK
+### Step 4: Import The SDK
 
 Add this import in the app entrypoint or root app file:
 
@@ -46,7 +61,7 @@ import 'package:tranzmit_flutter/tranzmit_flutter.dart';
 
 Use `tranzmit_flutter` for Dart imports. `tranzmit-flutter-sdk` is only the GitHub repo name.
 
-### Step 4: Wrap The App
+### Step 5: Wrap The App
 
 Place `TranzmitProvider` above routes/screens that can show a paywall:
 
@@ -73,7 +88,7 @@ TranzmitConfig(
 
 If the user is logged out, omit `userId`. The SDK generates `stableID`; do not generate a fake user ID.
 
-### Step 5: Present The Placement
+### Step 6: Present The Placement
 
 At the upgrade point, call:
 
@@ -83,6 +98,7 @@ final tranzmit = Tranzmit.of(context);
 final result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
+    // product.id is the Billing Product ID configured in Tranzmit.
     await purchaseProduct(product.id);
 
     tranzmit.reportConversion({
@@ -101,18 +117,19 @@ if (!result.shown) {
 
 Replace `upgrade_pro` with the dashboard trigger if Tranzmit supplied a different trigger.
 
-### Step 6: Wire Billing Safely
+### Step 7: Wire Billing Safely
 
 `onCTA` receives a Tranzmit `ProductSpec`.
 
-1. Use `product.id` to start the host app's billing flow.
-2. Wait for billing success.
-3. Let the host app grant entitlements.
-4. Call `reportConversion()` only after success.
+1. Read `product.id`; this is the dashboard **Billing Product ID**.
+2. Use `product.id` to start the host app's billing flow.
+3. Wait for billing success.
+4. Let the host app grant entitlements.
+5. Call `reportConversion()` only after success.
 
 Never call `reportConversion()` before the purchase provider confirms the transaction.
 
-### Step 7: Verify Locally
+### Step 8: Verify Locally
 
 Before marking the task done:
 
@@ -121,22 +138,23 @@ Before marking the task done:
 3. Confirm no `onError` logs appear.
 4. Confirm `Tranzmit.of(context).isReady` becomes `true`.
 5. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement.
-6. Trigger `presentPlacement('upgrade_pro')`.
-7. Confirm the remote paywall renders.
-8. Tap CTA and confirm the host billing flow starts.
-9. Complete a sandbox/test purchase.
-10. Confirm `reportConversion()` is called after success.
+6. Confirm the placement's product ID matches the expected billing product.
+7. Trigger `presentPlacement('upgrade_pro')`.
+8. Confirm the remote paywall renders.
+9. Tap CTA and confirm the host billing flow starts for the expected product.
+10. Complete a sandbox/test purchase.
+11. Confirm `reportConversion()` is called after success.
 
-### Step 8: Verify Remote Config
+### Step 9: Verify Remote Config
 
 During QA:
 
-1. Change paywall copy, placement status, or variant split in the Tranzmit dashboard.
+1. Change paywall copy, Billing Product ID, placement status, or variant split in the Tranzmit dashboard.
 2. Call `await Tranzmit.of(context).refreshConfig()`.
 3. Present the placement again.
 4. Confirm the app reflects the dashboard change without an app release.
 
-### Step 9: Final Acceptance Checklist
+### Step 10: Final Acceptance Checklist
 
 The integration is not complete until all of these are true:
 
@@ -144,10 +162,12 @@ The integration is not complete until all of these are true:
 2. `TranzmitProvider` wraps the paywall route tree.
 3. Logged-in users send the real app `userId`.
 4. Logged-out users rely on SDK-generated `stableID`.
-5. Native billing remains owned by the host app.
-6. Conversions are reported only after billing succeeds.
-7. The dashboard trigger used in code matches the trigger configured in Tranzmit.
-8. Remote dashboard changes can be pulled with `refreshConfig()` during QA.
+5. Each dashboard variant has the right **Billing Product ID**.
+6. Native billing remains owned by the host app.
+7. Billing starts from `product.id`, not from a hardcoded app-side plan.
+8. Conversions are reported only after billing succeeds.
+9. The dashboard trigger used in code matches the trigger configured in Tranzmit.
+10. Remote dashboard changes can be pulled with `refreshConfig()` during QA.
 
 ## Package Identity
 
@@ -169,6 +189,7 @@ Tranzmit controls:
 - Paywall copy and layout.
 - Hosted WebView document delivery.
 - Placement activation and pause state.
+- Billing Product ID per paywall variant.
 - Statsig-backed variant assignment.
 - Paywall event collection.
 
@@ -285,6 +306,7 @@ final tranzmit = Tranzmit.of(context);
 final result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
+    // product.id is the Billing Product ID configured in Tranzmit.
     await purchaseProduct(product.id);
 
     tranzmit.reportConversion({
@@ -301,7 +323,7 @@ if (!result.shown) {
 }
 ```
 
-`onCTA` receives the product selected in the paywall. The app must call its billing system and only call `reportConversion()` after billing succeeds.
+`onCTA` receives the product selected in the paywall. `product.id` is the **Billing Product ID** configured in the Tranzmit dashboard. The app must call its billing system with `product.id` and only call `reportConversion()` after billing succeeds.
 
 ## Native Billing
 
@@ -314,18 +336,21 @@ Use the customer's existing billing provider. Common options:
 
 Do not call `reportConversion()` before the native purchase succeeds. Do not grant entitlements in Tranzmit.
 
+Do not hardcode the billing product in the app. The product should come from the dashboard via `product.id`, so Tranzmit can route different paywall variants to different plans without an app release.
+
 ## QA Checklist
 
 After integration:
 
 1. Launch the app and confirm no `onError` logs.
 2. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement after init.
-3. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders.
-4. Tap CTA and confirm the host purchase flow starts.
-5. Complete a test purchase and confirm `reportConversion()` runs.
-6. Change paywall copy or variant setup in the dashboard.
-7. Call `await Tranzmit.of(context).refreshConfig()`.
-8. Present again and confirm remote changes are visible.
+3. Confirm the placement product ID matches the dashboard **Billing Product ID**.
+4. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders.
+5. Tap CTA and confirm the host purchase flow starts for `product.id`.
+6. Complete a test purchase and confirm `reportConversion()` runs.
+7. Change paywall copy, Billing Product ID, or variant setup in the dashboard.
+8. Call `await Tranzmit.of(context).refreshConfig()`.
+9. Present again and confirm remote changes are visible.
 
 ## Statsig Checklist
 
@@ -351,5 +376,6 @@ Expected variant keys for the current demo setup:
 - Forgetting to pass the public key supplied by Tranzmit.
 - Generating random logged-out user IDs instead of relying on `stableID`.
 - Hardcoding paywall UI in the host app.
+- Hardcoding billing product IDs in the host app instead of using `product.id`.
 - Calling conversion before billing succeeds.
 - Using Statsig values that do not match Tranzmit variant keys.

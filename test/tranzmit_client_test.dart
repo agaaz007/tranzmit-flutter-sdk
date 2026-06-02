@@ -15,7 +15,8 @@ const _baseSpec = {
     'subtitle': 'Get unlimited exports',
   },
   'document': {
-    'html': '<main><h1>Unlock Pro</h1><button data-tranzmit-action="cta" data-product-id="pro_monthly">Start Free Trial</button></main>',
+    'html':
+        '<main><h1>Unlock Pro</h1><button data-tranzmit-action="cta" data-product-id="pro_monthly">Start Free Trial</button></main>',
     'css': 'body{font-family:sans-serif}',
   },
   'bridge': {
@@ -91,6 +92,77 @@ void main() {
     expect(placement.spec.products.first.price, isA<ProductPrice>());
   });
 
+  test('calls fallback when placement is requested before SDK is ready', () {
+    final controller = TranzmitController(
+      TranzmitClient(storage: MemoryTranzmitStorage()),
+    );
+    FallbackEvent? fallback;
+
+    final result = controller.gate(
+      'upgrade_pro',
+      GateOptions(onFallback: (event) => fallback = event),
+    );
+
+    expect(result.shown, isFalse);
+    expect(fallback?.trigger, 'upgrade_pro');
+    expect(fallback?.reason, FallbackReason.notReady);
+  });
+
+  test('calls fallback when placement is missing', () async {
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: RecordingHttpClient(),
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    FallbackEvent? fallback;
+
+    final result = controller.gate(
+      'missing_trigger',
+      GateOptions(onFallback: (event) => fallback = event),
+    );
+
+    expect(result.shown, isFalse);
+    expect(fallback?.trigger, 'missing_trigger');
+    expect(fallback?.reason, FallbackReason.placementNotFound);
+  });
+
+  test('calls fallback when paywall rendering fails', () async {
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: RecordingHttpClient(),
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    FallbackEvent? fallback;
+
+    final result = controller.gate(
+      'upgrade_pro',
+      GateOptions(onFallback: (event) => fallback = event),
+    );
+    final active = controller.activePaywalls.single;
+    controller.handlePaywallError(active, StateError('broken WebView'));
+
+    expect(result.shown, isTrue);
+    expect(controller.activePaywalls, isEmpty);
+    expect(fallback?.trigger, 'upgrade_pro');
+    expect(fallback?.reason, FallbackReason.renderError);
+    expect(fallback?.variantId, 'var_a');
+    expect(fallback?.error, isA<StateError>());
+  });
+
   test('hydrates hosted WebView documents before caching config', () async {
     final httpClient = RecordingHttpClient(hostedDocumentMode: true);
     final client = TranzmitClient(
@@ -141,7 +213,8 @@ void main() {
 
     await Future<void>.delayed(Duration.zero);
     expect(httpClient.requests, hasLength(1));
-    final body = jsonDecode(httpClient.requests.single.body) as Map<String, dynamic>;
+    final body =
+        jsonDecode(httpClient.requests.single.body) as Map<String, dynamic>;
     expect(body['events'], hasLength(10));
     expect(body['events'][0]['properties']['platform'], 'flutter');
     expect(body['events'][0]['properties']['os'], 'ios');
@@ -172,7 +245,8 @@ void main() {
 
     await Future<void>.delayed(Duration.zero);
     expect(httpClient.requests, hasLength(1));
-    final body = jsonDecode(httpClient.requests.single.body) as Map<String, dynamic>;
+    final body =
+        jsonDecode(httpClient.requests.single.body) as Map<String, dynamic>;
     final events = body['events'] as List<dynamic>;
     final conversion = events.firstWhere(
       (event) => event['event'] == 'conversion',
@@ -218,11 +292,13 @@ class RecordingHttpClient extends http.BaseClient {
 
   Map<String, Object?> _hostedConfig() {
     final config = jsonDecode(jsonEncode(_mockConfig)) as Map<String, dynamic>;
-    final placement = config['placements']['upgrade_pro'] as Map<String, dynamic>;
+    final placement =
+        config['placements']['upgrade_pro'] as Map<String, dynamic>;
     final spec = placement['spec'] as Map<String, dynamic>;
     spec['cacheKey'] = 'hosted:test-1';
     spec['document'] = {
-      'url': 'https://example.test/v1/paywall-documents/pl_1/var_a/hosted:test-1.json?key=pk_test_demo',
+      'url':
+          'https://example.test/v1/paywall-documents/pl_1/var_a/hosted:test-1.json?key=pk_test_demo',
       'integrity': 'sha256-test',
     };
     return config;

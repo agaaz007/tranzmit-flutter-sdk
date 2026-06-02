@@ -27,9 +27,14 @@ The harness passes a demo `userId`. In a customer app, pass the real logged-in a
 2. **Remote placement** shows variant, presentation, cache key, document URL, and **HTML hydrated: yes**
 3. Tap **Present "upgrade_pro"** and confirm the paywall renders from server HTML.
 4. Tap CTA and confirm the demo host purchase dialog appears, then `reportConversion` fires.
-5. Edit paywall text, CSS, variant allocation, or `presentation.mode` in the dashboard.
-6. Tap **Refresh config** and present again to see updates.
+5. Change `TRANZMIT_TRIGGER` to a missing trigger and confirm the fallback dialog opens.
+6. Edit paywall text, CSS, variant allocation, or `presentation.mode` in the dashboard.
+7. Tap **Refresh config** and present again to see updates.
 
 ## Purchase ownership
 
 Tranzmit renders the paywall. Your app owns billing. Wire `onCTA` to StoreKit / Play Billing / RevenueCat, then call `reportConversion()` after success.
+
+## Fallback ownership
+
+Wire `onFallback` to the app's existing paywall. The SDK calls it when config is not ready, the placement is missing, or the WebView renderer fails, so customers are not left without a monetization path.

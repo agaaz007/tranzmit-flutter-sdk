@@ -25,6 +25,8 @@ class TranzmitPaywallHost extends StatelessWidget {
                 active: active,
                 onCTA: (product) => controller.handleCTA(active, product),
                 onDismiss: () => controller.dismissPaywall(active.id),
+                onError: (error) =>
+                    controller.handlePaywallError(active, error),
               ),
           ],
         );
@@ -43,6 +45,7 @@ class TranzmitPaywall extends StatefulWidget {
     this.presentation,
     this.onCTA,
     this.onDismiss,
+    this.onError,
     this.onImpression,
   });
 
@@ -53,6 +56,7 @@ class TranzmitPaywall extends StatefulWidget {
   final PresentationMode? presentation;
   final void Function(ProductSpec product)? onCTA;
   final VoidCallback? onDismiss;
+  final void Function(Object error)? onError;
   final VoidCallback? onImpression;
 
   @override
@@ -112,6 +116,7 @@ class _TranzmitPaywallState extends State<TranzmitPaywall> {
         });
         widget.onDismiss?.call();
       },
+      onError: widget.onError,
     );
   }
 }
@@ -121,11 +126,13 @@ class _PresentedPaywall extends StatelessWidget {
     required this.active,
     required this.onCTA,
     required this.onDismiss,
+    required this.onError,
   });
 
   final ActivePaywall active;
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
+  final void Function(Object error) onError;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +141,7 @@ class _PresentedPaywall extends StatelessWidget {
       presentation: active.presentation,
       onCTA: onCTA,
       onDismiss: onDismiss,
+      onError: onError,
     );
   }
 }
@@ -144,12 +152,14 @@ class _PresentedSpec extends StatelessWidget {
     required this.presentation,
     required this.onCTA,
     required this.onDismiss,
+    this.onError,
   });
 
   final PaywallSpec spec;
   final PresentationMode presentation;
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
+  final void Function(Object error)? onError;
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +169,7 @@ class _PresentedSpec extends StatelessWidget {
         presentation: presentation,
         onCTA: onCTA,
         onDismiss: onDismiss,
+        onError: onError,
       );
     }
 
@@ -174,6 +185,7 @@ class _PresentedSpec extends StatelessWidget {
                   presentation: presentation,
                   onCTA: onCTA,
                   onDismiss: onDismiss,
+                  onError: onError,
                 ),
               ),
               SafeArea(
@@ -206,6 +218,7 @@ class _PresentedSpec extends StatelessWidget {
                     presentation: presentation,
                     onCTA: onCTA,
                     onDismiss: onDismiss,
+                    onError: onError,
                   ),
                 ),
               ),
@@ -236,6 +249,7 @@ class _PresentedSpec extends StatelessWidget {
                     presentation: presentation,
                     onCTA: onCTA,
                     onDismiss: onDismiss,
+                    onError: onError,
                   ),
                 ),
               ),

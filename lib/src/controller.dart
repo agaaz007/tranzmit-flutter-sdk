@@ -7,17 +7,37 @@ import 'models.dart';
 
 enum PresentationMode { modal, sheet, fullscreen, inline }
 
+enum FallbackReason { notReady, placementNotFound, renderError }
+
+class FallbackEvent {
+  const FallbackEvent({
+    required this.trigger,
+    required this.reason,
+    this.error,
+    this.placement,
+    this.variantId,
+  });
+
+  final String trigger;
+  final FallbackReason reason;
+  final Object? error;
+  final PlacementConfig? placement;
+  final String? variantId;
+}
+
 class GateOptions {
   const GateOptions({
     this.presentation,
     this.onCTA,
     this.onDismiss,
+    this.onFallback,
     this.onImpression,
   });
 
   final PresentationMode? presentation;
   final void Function(ProductSpec product)? onCTA;
   final VoidCallback? onDismiss;
+  final void Function(FallbackEvent event)? onFallback;
   final VoidCallback? onImpression;
 }
 
@@ -83,13 +103,27 @@ class TranzmitController extends ChangeNotifier {
     _setReady(_client.isReady);
   }
 
-  PlacementConfig? getPlacement(String trigger) => _client.getPlacement(trigger);
+  PlacementConfig? getPlacement(String trigger) =>
+      _client.getPlacement(trigger);
 
   GateResult gate(String trigger, [GateOptions options = const GateOptions()]) {
-    if (!_client.isReady) return _noopResult;
+    if (!_client.isReady) {
+      options.onFallback?.call(
+        FallbackEvent(trigger: trigger, reason: FallbackReason.notReady),
+      );
+      return _noopResult;
+    }
 
     final placement = _client.getPlacement(trigger);
-    if (placement == null) return _noopResult;
+    if (placement == null) {
+      options.onFallback?.call(
+        FallbackEvent(
+          trigger: trigger,
+          reason: FallbackReason.placementNotFound,
+        ),
+      );
+      return _noopResult;
+    }
 
     final existing = _activePaywalls[trigger];
     if (existing != null) {
@@ -104,7 +138,8 @@ class TranzmitController extends ChangeNotifier {
       id: trigger,
       trigger: trigger,
       placement: placement,
-      presentation: options.presentation ?? _presentationFromSpec(placement.spec),
+      presentation:
+          options.presentation ?? _presentationFromSpec(placement.spec),
       options: options,
       shownAt: DateTime.now(),
     );
@@ -126,6 +161,7 @@ class TranzmitController extends ChangeNotifier {
     PresentationMode? presentation,
     void Function(ProductSpec product)? onCTA,
     VoidCallback? onDismiss,
+    void Function(FallbackEvent event)? onFallback,
     VoidCallback? onImpression,
   }) {
     return gate(
@@ -134,6 +170,7 @@ class TranzmitController extends ChangeNotifier {
         presentation: presentation,
         onCTA: onCTA,
         onDismiss: onDismiss,
+        onFallback: onFallback,
         onImpression: onImpression,
       ),
     );
@@ -171,6 +208,25 @@ class TranzmitController extends ChangeNotifier {
       });
       active.options.onDismiss?.call();
     }
+    _notifyIfAlive();
+  }
+
+  void handlePaywallError(ActivePaywall active, Object error) {
+    _client.track('paywall_error', {
+      ...attribution(active.trigger, active.placement),
+      'reason': 'render_error',
+      'message': error.toString(),
+    });
+    _activePaywalls.remove(active.id);
+    active.options.onFallback?.call(
+      FallbackEvent(
+        trigger: active.trigger,
+        reason: FallbackReason.renderError,
+        error: error,
+        placement: active.placement,
+        variantId: active.placement.variantId,
+      ),
+    );
     _notifyIfAlive();
   }
 

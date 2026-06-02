@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -12,6 +13,7 @@ class SpecRenderer extends StatefulWidget {
     required this.spec,
     required this.onCTA,
     required this.onDismiss,
+    this.onError,
     this.presentation = PresentationMode.sheet,
   });
 
@@ -19,6 +21,7 @@ class SpecRenderer extends StatefulWidget {
   final PresentationMode presentation;
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
+  final void Function(Object error)? onError;
 
   @override
   State<SpecRenderer> createState() => _SpecRendererState();
@@ -27,6 +30,7 @@ class SpecRenderer extends StatefulWidget {
 class _SpecRendererState extends State<SpecRenderer> {
   late final WebViewController _controller;
   String? _lastLoadedSignature;
+  String? _lastReportedErrorSignature;
 
   @override
   void initState() {
@@ -53,6 +57,10 @@ class _SpecRendererState extends State<SpecRenderer> {
       ..setBackgroundColor(Colors.transparent)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onWebResourceError: (error) {
+            if (error.isForMainFrame == false) return;
+            _reportRenderError(error);
+          },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
             if (uri == null) return NavigationDecision.prevent;
@@ -110,6 +118,7 @@ class _SpecRendererState extends State<SpecRenderer> {
   Widget build(BuildContext context) {
     final html = widget.spec.document?.html;
     if (html == null || html.isEmpty) {
+      _reportRenderError(StateError('Tranzmit paywall document not loaded'));
       return _MissingDocumentView(
         cacheKey: widget.spec.cacheKey,
         documentUrl: widget.spec.document?.url,
@@ -149,10 +158,33 @@ class _SpecRendererState extends State<SpecRenderer> {
     _lastLoadedSignature = signature;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastLoadedSignature != signature) return;
-      _controller.loadHtmlString(
-        _composeDocument(widget.spec, widget.presentation, viewport: viewport),
-        baseUrl: widget.spec.document?.baseUrl,
+      unawaited(
+        _controller
+            .loadHtmlString(
+              _composeDocument(
+                widget.spec,
+                widget.presentation,
+                viewport: viewport,
+              ),
+              baseUrl: widget.spec.document?.baseUrl,
+            )
+            .catchError(_reportRenderError),
       );
+    });
+  }
+
+  void _reportRenderError(Object error) {
+    final signature = [
+      widget.spec.cacheKey,
+      widget.spec.revision,
+      error.runtimeType,
+      error.toString(),
+    ].join('|');
+    if (_lastReportedErrorSignature == signature) return;
+    _lastReportedErrorSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onError?.call(error);
     });
   }
 

@@ -234,7 +234,8 @@ class TranzmitClient {
 
   void reportConversion(Map<String, Object?> data) {
     final trigger = data['trigger'];
-    final placement = trigger is String ? _configResponse?.placements[trigger] : null;
+    final placement =
+        trigger is String ? _configResponse?.placements[trigger] : null;
     track(
       'conversion',
       placement == null
@@ -344,7 +345,8 @@ class TranzmitClient {
       await _setCachedConfig(config, identity, fresh);
     } catch (error) {
       onError?.call(
-        TranzmitError('config_refresh_failed', error.toString(), recoverable: true),
+        TranzmitError('config_refresh_failed', error.toString(),
+            recoverable: true),
       );
     }
   }
@@ -431,7 +433,8 @@ class TranzmitClient {
       final url = document['url'];
       if (url is! String || url.isEmpty) continue;
 
-      final response = await _httpClient.get(Uri.parse(url)).timeout(_fetchTimeout);
+      final response =
+          await _httpClient.get(Uri.parse(url)).timeout(_fetchTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw TranzmitError(
           'paywall_document_fetch_failed',
@@ -452,10 +455,18 @@ class TranzmitClient {
           );
         }
         document['html'] = html;
-        if (payload['css'] != null) document['css'] = payload['css'];
-        if (payload['js'] != null) document['js'] = payload['js'];
-        if (payload['baseUrl'] != null) document['baseUrl'] = payload['baseUrl'];
-        if (payload['integrity'] != null) document['integrity'] = payload['integrity'];
+        if (payload['css'] != null) {
+          document['css'] = payload['css'];
+        }
+        if (payload['js'] != null) {
+          document['js'] = payload['js'];
+        }
+        if (payload['baseUrl'] != null) {
+          document['baseUrl'] = payload['baseUrl'];
+        }
+        if (payload['integrity'] != null) {
+          document['integrity'] = payload['integrity'];
+        }
       } else {
         document['html'] = response.body;
       }
@@ -464,9 +475,15 @@ class TranzmitClient {
 
   Map<String, Object?>? _addMetadata(Map<String, Object?>? properties) {
     final next = <String, Object?>{...?properties};
-    if (_metadata.platform != null) next['platform'] = _metadata.platform;
-    if (_metadata.os != null) next['os'] = _metadata.os;
-    if (_metadata.sdkVersion != null) next['sdk_version'] = _metadata.sdkVersion;
+    if (_metadata.platform != null) {
+      next['platform'] = _metadata.platform;
+    }
+    if (_metadata.os != null) {
+      next['os'] = _metadata.os;
+    }
+    if (_metadata.sdkVersion != null) {
+      next['sdk_version'] = _metadata.sdkVersion;
+    }
     return next.isEmpty ? null : next;
   }
 
@@ -505,7 +522,8 @@ Future<TranzmitIdentity> resolveIdentity({
 
   final trimmedUserId = userId?.trim();
   return TranzmitIdentity(
-    userId: trimmedUserId == null || trimmedUserId.isEmpty ? null : trimmedUserId,
+    userId:
+        trimmedUserId == null || trimmedUserId.isEmpty ? null : trimmedUserId,
     identifiers: normalized,
   );
 }

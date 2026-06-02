@@ -22,7 +22,8 @@ void main() {
         apiBaseUrl: _apiBaseUrl,
         userId: 'flutter-sdk-harness',
       ),
-      onError: (error) => debugPrint('[Tranzmit] ${error.code}: ${error.message}'),
+      onError: (error) =>
+          debugPrint('[Tranzmit] ${error.code}: ${error.message}'),
       child: const SdkHarnessApp(),
     ),
   );
@@ -100,23 +101,6 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
     final controller = _controller;
     if (controller == null) return;
 
-    if (!controller.isReady) {
-      _setEvent('SDK not ready yet — wait for init or refresh');
-      return;
-    }
-
-    final placement = controller.getPlacement(_demoTrigger);
-    if (placement == null) {
-      _setEvent('No active placement for "$_demoTrigger"');
-      return;
-    }
-
-    final document = placement.spec.document;
-    if (document?.html == null || document!.html!.isEmpty) {
-      _setEvent('Hosted document not hydrated yet — tap Refresh config');
-      return;
-    }
-
     final result = controller.presentPlacement(
       _demoTrigger,
       onCTA: (product) async {
@@ -131,11 +115,15 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
         _setEvent('reportConversion sent for ${product.id}');
       },
       onDismiss: () => _setEvent('Paywall dismissed'),
+      onFallback: (event) {
+        _setEvent('Fallback opened: ${event.reason.name}');
+        _openFallbackPaywall(event);
+      },
       onImpression: () => _setEvent('Impression tracked for $_demoTrigger'),
     );
 
     if (!result.shown) {
-      _setEvent('Paywall was not shown');
+      _setEvent('Paywall was not shown; fallback handled it');
     }
   }
 
@@ -152,6 +140,27 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Complete purchase'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openFallbackPaywall(FallbackEvent event) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Existing paywall fallback'),
+        content: Text(
+          'A production app should open its original in-app paywall here.\n\n'
+          'Trigger: ${event.trigger}\n'
+          'Reason: ${event.reason.name}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -198,7 +207,9 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
               rows: [
                 _StatusRow(
                   'Placement',
-                  placement == null ? 'not loaded' : placement.placementId ?? _demoTrigger,
+                  placement == null
+                      ? 'not loaded'
+                      : placement.placementId ?? _demoTrigger,
                 ),
                 _StatusRow('Variant', placement?.variantId ?? '—'),
                 _StatusRow('Renderer', spec?.renderer ?? '—'),
@@ -217,7 +228,7 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: controller?.isReady == true ? _presentPaywall : null,
+              onPressed: controller == null ? null : _presentPaywall,
               icon: const Icon(Icons.lock_open),
               label: const Text('Present "$_demoTrigger"'),
             ),
