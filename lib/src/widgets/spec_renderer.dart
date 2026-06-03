@@ -404,12 +404,41 @@ String _composeDocument(
     return '''<!doctype html><html><body></body></html>''';
   }
 
-  const bootstrap = '''
+  final ctaTextJson = jsonEncode(spec.cta.text);
+
+  final bootstrap = '''
 <script>
 (function(){
   var viewport = window.TranzmitNativeViewport || null;
+  var configuredCtaText = $ctaTextJson;
   function post(message){
     try { window.TranzmitBridge.postMessage(JSON.stringify(message)); } catch (_) {}
+  }
+  function normalizeText(value){
+    return (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  }
+  function productIdFor(node){
+    return node.getAttribute('data-product-id') ||
+      node.getAttribute('data-tranzmit-product-id') ||
+      node.getAttribute('data-billing-product-id') ||
+      undefined;
+  }
+  function looksLikeCta(node){
+    if (!node || !node.getAttribute) return false;
+    if (productIdFor(node)) return true;
+    var tag = (node.tagName || '').toLowerCase();
+    if (tag !== 'a' && tag !== 'button' && node.getAttribute('role') !== 'button') {
+      return false;
+    }
+    var marker = [
+      node.getAttribute('class'),
+      node.getAttribute('id'),
+      node.getAttribute('data-testid')
+    ].filter(Boolean).join(' ');
+    if (/(^|[\\s_-])(cta|primary-cta|checkout|purchase|subscribe|upgrade|continue)([\\s_-]|\$)/i.test(marker)) {
+      return true;
+    }
+    return configuredCtaText && normalizeText(node.textContent) === normalizeText(configuredCtaText);
   }
   window.Tranzmit = {
     viewport: viewport,
@@ -426,8 +455,17 @@ String _composeDocument(
         event.preventDefault();
         post({
           type: action === 'cta' ? 'cta' : action,
-          productId: node.getAttribute('data-product-id') || undefined,
+          productId: productIdFor(node),
           name: node.getAttribute('data-action-name') || undefined,
+          url: node.getAttribute('href') || undefined
+        });
+        return;
+      }
+      if (looksLikeCta(node)) {
+        event.preventDefault();
+        post({
+          type: 'cta',
+          productId: productIdFor(node),
           url: node.getAttribute('href') || undefined
         });
         return;

@@ -69,6 +69,23 @@ void main() {
     expect(product!.id, 'pro_monthly');
   });
 
+  test('bridges plain hosted CTA links without navigating', () {
+    final specJson = Map<String, dynamic>.from(_baseSpec);
+    specJson['document'] = {
+      'html':
+          '<main><a class="cta" href="about:blank">Start Free Trial</a></main>',
+    };
+    final spec = PaywallSpec.fromJson(specJson);
+    final html = composePaywallDocumentForTest(spec);
+
+    expect(html, contains('var configuredCtaText = "Start Free Trial";'));
+    expect(html, contains('function looksLikeCta(node)'));
+    expect(
+        html,
+        contains(
+            "event.preventDefault();\n        post({\n          type: 'cta'"));
+  });
+
   test('composes presentation-aware fullscreen documents', () {
     final spec = PaywallSpec.fromJson(Map<String, dynamic>.from(_baseSpec));
     final html = composePaywallDocumentForTest(

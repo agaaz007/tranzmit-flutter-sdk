@@ -39,6 +39,7 @@ Examples:
 1. StoreKit: `com.customer.app.pro.yearly`.
 2. Google Play Billing: `pro_yearly`.
 3. RevenueCat: the product/package ID the customer app uses to start purchase.
+4. Razorpay: the Razorpay `plan_id`, `item_id`, or internal SKU that the customer app maps to a Razorpay order on its backend.
 
 This value is saved as `spec.products[0].id`. When the user taps the paywall CTA, the Flutter SDK receives the matching `ProductSpec` and passes it to the host app as `product.id`.
 
@@ -128,8 +129,8 @@ final result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in the Tranzmit dashboard.
-    // Tranzmit owns paywall UI. The host app owns native billing.
-    await purchaseWithStoreKitPlayBillingOrRevenueCat(product.id);
+    // Tranzmit owns paywall UI. The host app owns billing and entitlements.
+    await purchaseProduct(product.id);
 
     tranzmit.reportConversion({
       'trigger': 'upgrade_pro',
@@ -157,7 +158,7 @@ Always wire `onFallback` to the app's current paywall. That keeps monetization a
 ```dart
 final result = tranzmit.presentPlacement(
   'upgrade_pro',
-  onCTA: (product) => purchaseWithStoreKitPlayBillingOrRevenueCat(product.id),
+  onCTA: (product) => purchaseProduct(product.id),
   onFallback: (event) {
     debugPrint('Tranzmit fallback: ${event.reason.name}');
     openExistingInAppPaywall();
@@ -185,7 +186,32 @@ When the paywall CTA is tapped:
 4. Grant the entitlement in the app's existing entitlement system.
 5. Call `reportConversion()` only after the purchase succeeds.
 
-Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, restore purchases, or grant entitlements.
+Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, restore purchases, or grant entitlements.
+
+For Razorpay, put the checkout flow inside `onCTA`. The SDK callback is the handoff point from the hosted paywall to the customer app:
+
+```dart
+final result = tranzmit.presentPlacement(
+  'upgrade_pro',
+  onCTA: (product) async {
+    // product.id comes from the dashboard Billing Product ID field.
+    final success = await startRazorpayCheckout(product.id);
+
+    if (!success) return;
+
+    await grantPaidEntitlement();
+
+    tranzmit.reportConversion({
+      'trigger': 'upgrade_pro',
+      'productId': product.id,
+      'revenue': 999,
+      'currency': 'INR',
+    });
+  },
+);
+```
+
+`startRazorpayCheckout(product.id)` should be implemented by the host app. A common flow is: send `product.id` to the app backend, create or look up the Razorpay order/subscription there, open Razorpay checkout in Flutter, verify the payment on the backend, then return success only after verification.
 
 ### Step 10: Verify The Integration
 
@@ -325,7 +351,7 @@ final result = tranzmit.presentPlacement(
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in the Tranzmit dashboard.
     // Tranzmit owns paywall rendering. The host app owns billing.
-    await purchaseWithStoreKitPlayBillingOrRevenueCat(product.id);
+    await purchaseProduct(product.id);
 
     tranzmit.reportConversion({
       'trigger': 'upgrade_pro',
@@ -358,7 +384,7 @@ The SDK exposes a first-class fallback route through `onFallback`. Wire it to th
 ```dart
 tranzmit.presentPlacement(
   'upgrade_pro',
-  onCTA: (product) => purchaseWithStoreKitPlayBillingOrRevenueCat(product.id),
+  onCTA: (product) => purchaseProduct(product.id),
   onFallback: (event) {
     switch (event.reason) {
       case FallbackReason.notReady:
@@ -374,7 +400,7 @@ tranzmit.presentPlacement(
 
 ## Purchase Ownership
 
-Tranzmit does not call StoreKit, Google Play Billing, or RevenueCat. The WebView bridge emits a CTA event with the selected `product.id`; this is the **Billing Product ID** configured for that paywall variant in the Tranzmit dashboard. The host app must:
+Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, or any other purchase provider. The WebView bridge emits a CTA event with the selected `product.id`; this is the **Billing Product ID** configured for that paywall variant in the Tranzmit dashboard. The host app must:
 
 1. Start the native purchase flow using `product.id`.
 2. Confirm the purchase provider started the expected product or package.
@@ -382,6 +408,8 @@ Tranzmit does not call StoreKit, Google Play Billing, or RevenueCat. The WebView
 4. Call `reportConversion()` only after a successful purchase.
 
 This keeps purchases, restores, refunds, subscriptions, and entitlements under the customer app's control.
+
+CTA taps are callbacks, not redirects. Hosted paywall documents should call `window.Tranzmit.cta(productId)` or mark the CTA with `data-tranzmit-action="cta"`. The SDK also intercepts common hosted CTA links/buttons and prevents WebView navigation, so a CTA like `<a class="cta" href="...">Start Free Trial</a>` invokes `onCTA` instead of sending the user to a blank in-app WebView page.
 
 ## Refresh During QA
 
@@ -433,6 +461,13 @@ If the CTA opens the wrong plan:
 1. Confirm the dashboard **Billing Product ID** matches StoreKit, Play Billing, RevenueCat, or the host billing system exactly.
 2. Confirm the app starts billing from `product.id`, not a hardcoded local product ID.
 3. Refresh config after dashboard edits and present the paywall again.
+
+If the CTA opens a blank screen:
+
+1. Upgrade to an SDK version that intercepts hosted CTA links/buttons.
+2. Confirm the app passed an `onCTA` callback to `presentPlacement()`.
+3. Prefer one of these hosted CTA forms: `window.Tranzmit.cta(productId)`, `data-tranzmit-action="cta"`, or a normal CTA link/button whose text matches the dashboard CTA text.
+4. Keep purchase checkout in the Flutter `onCTA` callback; do not navigate the hosted paywall to Razorpay directly.
 
 If Statsig buckets look wrong:
 
