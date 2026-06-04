@@ -87,6 +87,23 @@ void main() {
             "event.preventDefault();\n        post({\n          type: 'cta'"));
   });
 
+  test('allows iOS initial document navigation to the configured base URL', () {
+    expect(
+      isInitialDocumentNavigation(
+        Uri.parse('https://cdn.tranzmit.com/paywalls/demo'),
+        'https://cdn.tranzmit.com/paywalls/demo/',
+      ),
+      isTrue,
+    );
+    expect(
+      isInitialDocumentNavigation(
+        Uri.parse('https://checkout.razorpay.com/v1/checkout/embedded'),
+        'https://cdn.tranzmit.com/paywalls/demo',
+      ),
+      isFalse,
+    );
+  });
+
   test('composes presentation-aware fullscreen documents', () {
     final spec = PaywallSpec.fromJson(Map<String, dynamic>.from(_baseSpec));
     final html = composePaywallDocumentForTest(

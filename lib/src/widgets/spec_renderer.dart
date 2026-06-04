@@ -69,7 +69,10 @@ class _SpecRendererState extends State<SpecRenderer> {
             final uri = Uri.tryParse(request.url);
             if (uri == null) return NavigationDecision.prevent;
             if (_allowDocumentNavigation &&
-                (uri.scheme == 'about' || uri.scheme == 'data')) {
+                isInitialDocumentNavigation(
+                  uri,
+                  widget.spec.document?.baseUrl,
+                )) {
               return NavigationDecision.navigate;
             }
             _handleBridgeMessage(
@@ -378,6 +381,29 @@ Map<String, dynamic>? parseWebViewBridgeMessage(String raw) {
 
 String? bridgeMessageType(Map<String, dynamic> message) {
   return message['type']?.toString() ?? message['action']?.toString();
+}
+
+@visibleForTesting
+bool isInitialDocumentNavigation(Uri uri, String? baseUrl) {
+  if (uri.scheme == 'about' || uri.scheme == 'data') return true;
+
+  final normalizedBaseUrl = _normalizeUrl(baseUrl);
+  if (normalizedBaseUrl == null) return false;
+
+  return _normalizeUrl(uri.toString()) == normalizedBaseUrl;
+}
+
+String? _normalizeUrl(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme) return null;
+
+  final normalized = uri.removeFragment().toString();
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    return normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
 }
 
 ProductSpec? productForWebViewBridgeMessage(
