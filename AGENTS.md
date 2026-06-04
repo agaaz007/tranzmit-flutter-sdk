@@ -95,7 +95,8 @@ At the upgrade point, call:
 ```dart
 final tranzmit = Tranzmit.of(context);
 
-final result = tranzmit.presentPlacement(
+late final GateResult result;
+result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in Tranzmit.
@@ -107,6 +108,8 @@ final result = tranzmit.presentPlacement(
       'revenue': 999,
       'currency': 'INR',
     });
+
+    result.dismiss();
   },
 );
 
@@ -117,6 +120,8 @@ if (!result.shown) {
 
 Replace `upgrade_pro` with the dashboard trigger if Tranzmit supplied a different trigger.
 
+The SDK does not dismiss the paywall on CTA by itself. If `onCTA` is empty, the paywall stays visible. Call `result.dismiss()` from the host app after checkout succeeds, or when the user closes the paywall.
+
 ### Step 7: Wire Billing Safely
 
 `onCTA` receives a Tranzmit `ProductSpec`.
@@ -126,8 +131,35 @@ Replace `upgrade_pro` with the dashboard trigger if Tranzmit supplied a differen
 3. Wait for billing success.
 4. Let the host app grant entitlements.
 5. Call `reportConversion()` only after success.
+6. Call `result.dismiss()` to close the paywall.
 
 Never call `reportConversion()` before the purchase provider confirms the transaction.
+
+For Razorpay, put checkout inside `onCTA`:
+
+```dart
+late final GateResult result;
+result = tranzmit.presentPlacement(
+  'upgrade_pro',
+  onCTA: (product) async {
+    final success = await startRazorpayCheckout(product.id);
+    if (!success) return;
+
+    await grantPaidEntitlement();
+
+    tranzmit.reportConversion({
+      'trigger': 'upgrade_pro',
+      'productId': product.id,
+      'revenue': 999,
+      'currency': 'INR',
+    });
+
+    result.dismiss();
+  },
+);
+```
+
+CTA taps are callbacks, not WebView redirects. Do not navigate the hosted paywall to Razorpay or `about:blank`; keep checkout in Flutter `onCTA`.
 
 ### Step 8: Verify Locally
 
@@ -303,7 +335,8 @@ Call `presentPlacement` where the app normally starts an upgrade flow.
 ```dart
 final tranzmit = Tranzmit.of(context);
 
-final result = tranzmit.presentPlacement(
+late final GateResult result;
+result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in Tranzmit.
@@ -315,6 +348,8 @@ final result = tranzmit.presentPlacement(
       'revenue': 999,
       'currency': 'INR',
     });
+
+    result.dismiss();
   },
 );
 
@@ -323,7 +358,7 @@ if (!result.shown) {
 }
 ```
 
-`onCTA` receives the product selected in the paywall. `product.id` is the **Billing Product ID** configured in the Tranzmit dashboard. The app must call its billing system with `product.id` and only call `reportConversion()` after billing succeeds.
+`onCTA` receives the product selected in the paywall. `product.id` is the **Billing Product ID** configured in the Tranzmit dashboard. The app must call its billing system with `product.id`, call `reportConversion()` only after billing succeeds, then call `result.dismiss()` to close the paywall.
 
 ## Native Billing
 

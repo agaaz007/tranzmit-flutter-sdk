@@ -188,6 +188,7 @@ When the paywall CTA is tapped:
 3. Wait for the purchase provider to confirm success.
 4. Grant the entitlement in the app's existing entitlement system.
 5. Call `reportConversion()` only after the purchase succeeds.
+6. Call `result.dismiss()` to close the paywall.
 
 Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, restore purchases, or grant entitlements.
 
