@@ -133,6 +133,33 @@ void main() {
     expect(fallback?.reason, FallbackReason.placementNotFound);
   });
 
+  test('keeps paywall visible when CTA callback is empty', () async {
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: RecordingHttpClient(),
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    var ctaCount = 0;
+
+    final result = controller.gate(
+      'upgrade_pro',
+      GateOptions(onCTA: (_) => ctaCount++),
+    );
+    final active = controller.activePaywalls.single;
+    controller.handleCTA(active, active.placement.spec.products.first);
+
+    expect(result.shown, isTrue);
+    expect(ctaCount, 1);
+    expect(controller.activePaywalls, hasLength(1));
+  });
+
   test('calls fallback when paywall rendering fails', () async {
     final controller = TranzmitController(
       TranzmitClient(

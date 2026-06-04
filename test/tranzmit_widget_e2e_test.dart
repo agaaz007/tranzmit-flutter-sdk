@@ -80,6 +80,7 @@ void main() {
 
     expect(html, contains('var configuredCtaText = "Start Free Trial";'));
     expect(html, contains('function looksLikeCta(node)'));
+    expect(html, contains("type: 'cta'"));
     expect(
         html,
         contains(

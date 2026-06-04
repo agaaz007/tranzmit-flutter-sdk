@@ -31,6 +31,7 @@ class _SpecRendererState extends State<SpecRenderer> {
   late final WebViewController _controller;
   String? _lastLoadedSignature;
   String? _lastReportedErrorSignature;
+  bool _allowDocumentNavigation = false;
 
   @override
   void initState() {
@@ -57,6 +58,9 @@ class _SpecRendererState extends State<SpecRenderer> {
       ..setBackgroundColor(Colors.transparent)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onPageFinished: (_) {
+            _allowDocumentNavigation = false;
+          },
           onWebResourceError: (error) {
             if (error.isForMainFrame == false) return;
             _reportRenderError(error);
@@ -64,7 +68,8 @@ class _SpecRendererState extends State<SpecRenderer> {
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
             if (uri == null) return NavigationDecision.prevent;
-            if (uri.scheme == 'about' || uri.scheme == 'data') {
+            if (_allowDocumentNavigation &&
+                (uri.scheme == 'about' || uri.scheme == 'data')) {
               return NavigationDecision.navigate;
             }
             _handleBridgeMessage(
@@ -158,17 +163,21 @@ class _SpecRendererState extends State<SpecRenderer> {
     _lastLoadedSignature = signature;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastLoadedSignature != signature) return;
+      _allowDocumentNavigation = true;
       unawaited(
         _controller
             .loadHtmlString(
-              _composeDocument(
-                widget.spec,
-                widget.presentation,
-                viewport: viewport,
-              ),
-              baseUrl: widget.spec.document?.baseUrl,
-            )
-            .catchError(_reportRenderError),
+          _composeDocument(
+            widget.spec,
+            widget.presentation,
+            viewport: viewport,
+          ),
+          baseUrl: widget.spec.document?.baseUrl,
+        )
+            .catchError((Object error) {
+          _allowDocumentNavigation = false;
+          _reportRenderError(error);
+        }),
       );
     });
   }

@@ -125,7 +125,8 @@ Call `presentPlacement()` where the app normally starts an upgrade flow.
 ```dart
 final tranzmit = Tranzmit.of(context);
 
-final result = tranzmit.presentPlacement(
+late final GateResult result;
+result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in the Tranzmit dashboard.
@@ -138,6 +139,8 @@ final result = tranzmit.presentPlacement(
       'revenue': 999,
       'currency': 'INR',
     });
+
+    result.dismiss();
   },
   onFallback: (event) {
     debugPrint('Tranzmit fallback: ${event.reason.name}');
@@ -191,7 +194,8 @@ Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, rest
 For Razorpay, put the checkout flow inside `onCTA`. The SDK callback is the handoff point from the hosted paywall to the customer app:
 
 ```dart
-final result = tranzmit.presentPlacement(
+late final GateResult result;
+result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id comes from the dashboard Billing Product ID field.
@@ -207,11 +211,15 @@ final result = tranzmit.presentPlacement(
       'revenue': 999,
       'currency': 'INR',
     });
+
+    result.dismiss();
   },
 );
 ```
 
 `startRazorpayCheckout(product.id)` should be implemented by the host app. A common flow is: send `product.id` to the app backend, create or look up the Razorpay order/subscription there, open Razorpay checkout in Flutter, verify the payment on the backend, then return success only after verification.
+
+The SDK does not dismiss or navigate the paywall on CTA by itself. If `onCTA` is empty, the paywall stays on screen. Dismiss it from the host app only after checkout succeeds, or when the user cancels/closes the paywall.
 
 ### Step 10: Verify The Integration
 
@@ -346,7 +354,8 @@ Use the trigger configured in the Tranzmit dashboard. The default trigger used b
 ```dart
 final tranzmit = Tranzmit.of(context);
 
-final result = tranzmit.presentPlacement(
+late final GateResult result;
+result = tranzmit.presentPlacement(
   'upgrade_pro',
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in the Tranzmit dashboard.
@@ -359,6 +368,8 @@ final result = tranzmit.presentPlacement(
       'revenue': 999,
       'currency': 'INR',
     });
+
+    result.dismiss();
   },
   onDismiss: () {
     debugPrint('Tranzmit paywall dismissed');
@@ -409,7 +420,7 @@ Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, or a
 
 This keeps purchases, restores, refunds, subscriptions, and entitlements under the customer app's control.
 
-CTA taps are callbacks, not redirects. Hosted paywall documents should call `window.Tranzmit.cta(productId)` or mark the CTA with `data-tranzmit-action="cta"`. The SDK also intercepts common hosted CTA links/buttons and prevents WebView navigation, so a CTA like `<a class="cta" href="...">Start Free Trial</a>` invokes `onCTA` instead of sending the user to a blank in-app WebView page.
+CTA taps are callbacks, not redirects. Hosted paywall documents should call `window.Tranzmit.cta(productId)` or mark the CTA with `data-tranzmit-action="cta"`. The SDK also intercepts common hosted CTA links/buttons and prevents WebView navigation, so a CTA like `<a class="cta" href="...">Start Free Trial</a>` invokes `onCTA` instead of sending the user to a blank in-app WebView page. The SDK keeps the paywall visible on CTA; call `result.dismiss()` from the host app after checkout succeeds or when the host app wants to close it.
 
 ## Refresh During QA
 
@@ -465,9 +476,10 @@ If the CTA opens the wrong plan:
 If the CTA opens a blank screen:
 
 1. Upgrade to an SDK version that intercepts hosted CTA links/buttons.
-2. Confirm the app passed an `onCTA` callback to `presentPlacement()`.
-3. Prefer one of these hosted CTA forms: `window.Tranzmit.cta(productId)`, `data-tranzmit-action="cta"`, or a normal CTA link/button whose text matches the dashboard CTA text.
-4. Keep purchase checkout in the Flutter `onCTA` callback; do not navigate the hosted paywall to Razorpay directly.
+2. Tap the CTA with no `onCTA` callback or an empty callback. The paywall should stay visible and must not navigate to `about:blank`, `data:`, or any Razorpay URL inside the WebView.
+3. Confirm the app passed the real purchase flow in `onCTA` before shipping.
+4. Prefer one of these hosted CTA forms: `window.Tranzmit.cta(productId)`, `data-tranzmit-action="cta"`, or a normal CTA link/button whose text matches the dashboard CTA text.
+5. Keep purchase checkout in the Flutter `onCTA` callback; do not navigate the hosted paywall to Razorpay directly.
 
 If Statsig buckets look wrong:
 

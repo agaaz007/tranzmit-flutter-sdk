@@ -191,7 +191,6 @@ class TranzmitController extends ChangeNotifier {
       ...attribution(active.trigger, active.placement),
       'productId': product.id,
     });
-    _activePaywalls.remove(active.id);
     active.options.onCTA?.call(product);
     _notifyIfAlive();
   }
