@@ -125,6 +125,27 @@ class Tranzmit extends InheritedNotifier<TranzmitController> {
   static TranzmitController? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<Tranzmit>()?.notifier;
   }
+
+  static GateResult presentPlacementInRoute(
+    BuildContext context,
+    String trigger, {
+    PresentationMode? presentation,
+    void Function(ProductSpec product)? onCTA,
+    VoidCallback? onDismiss,
+    void Function(FallbackEvent event)? onFallback,
+    VoidCallback? onImpression,
+  }) {
+    return presentPaywallRoute(
+      context: context,
+      controller: of(context),
+      trigger: trigger,
+      presentation: presentation,
+      onCTA: onCTA,
+      onDismiss: onDismiss,
+      onFallback: onFallback,
+      onImpression: onImpression,
+    );
+  }
 }
 
 String _configKey(TranzmitConfig config) {

@@ -82,6 +82,7 @@ class TranzmitController extends ChangeNotifier {
 
   bool get isReady => _isReady;
   bool get ready => _isReady;
+  TranzmitIdentity? get identity => _client.identity;
   List<ActivePaywall> get activePaywalls =>
       List<ActivePaywall>.unmodifiable(_activePaywalls.values);
 

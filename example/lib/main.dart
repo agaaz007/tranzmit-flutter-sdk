@@ -14,13 +14,19 @@ const _demoTrigger = String.fromEnvironment(
   defaultValue: 'upgrade_pro',
 );
 
+/// QA stableIDs — different IDs usually land in different Statsig buckets.
+const _variantStableIds = <String, String>{
+  'control': 'trz_qa_control',
+  'intro_offer': 'trz_qa_intro_offer',
+  'original': 'trz_qa_original',
+};
+
 void main() {
   runApp(
     TranzmitProvider(
       config: const TranzmitConfig(
         publicKey: _publicKey,
         apiBaseUrl: _apiBaseUrl,
-        userId: 'flutter-sdk-harness',
       ),
       onError: (error) =>
           debugPrint('[Tranzmit] ${error.code}: ${error.message}'),
@@ -55,8 +61,19 @@ class SdkHarnessScreen extends StatefulWidget {
 
 class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
   TranzmitController? _controller;
+  final _userIdController = TextEditingController();
+  final _stableIdController = TextEditingController();
+  bool _loggedOut = true;
+  int _probeBucket = 0;
   String? _lastError;
   String? _lastEvent;
+
+  @override
+  void initState() {
+    super.initState();
+    _userIdController.addListener(_onIdentityFieldChanged);
+    _stableIdController.addListener(_onIdentityFieldChanged);
+  }
 
   @override
   void didChangeDependencies() {
@@ -69,8 +86,16 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
 
   @override
   void dispose() {
+    _userIdController.removeListener(_onIdentityFieldChanged);
+    _stableIdController.removeListener(_onIdentityFieldChanged);
+    _userIdController.dispose();
+    _stableIdController.dispose();
     _controller?.removeListener(_onControllerChanged);
     super.dispose();
+  }
+
+  void _onIdentityFieldChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onControllerChanged() {
@@ -83,6 +108,78 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
+  }
+
+  TranzmitConfig _buildConfig() {
+    final raw = _userIdController.text.trim();
+    final userId = _loggedOut || raw.isEmpty ? null : raw;
+    final stableOverride = _stableIdController.text.trim();
+    return TranzmitConfig(
+      publicKey: _publicKey,
+      apiBaseUrl: _apiBaseUrl,
+      userId: userId,
+      identifiers: stableOverride.isEmpty
+          ? null
+          : <String, String>{'stableID': stableOverride},
+    );
+  }
+
+  bool _isIdentityDirty(TranzmitController? controller) {
+    final identity = controller?.identity;
+    if (identity == null) return true;
+    if (_effectiveUserId != identity.userId) return true;
+    final override = _stableIdController.text.trim();
+    final activeStable = identity.identifiers['stableID'];
+    if (override.isNotEmpty && override != activeStable) return true;
+    return false;
+  }
+
+  Future<void> _applyVariantPreset(String variantKey) async {
+    setState(() {
+      _loggedOut = true;
+      _userIdController.clear();
+      _stableIdController.text =
+          _variantStableIds[variantKey] ?? 'trz_qa_$variantKey';
+    });
+    await _applyIdentity();
+  }
+
+  Future<void> _applyNextProbeBucket() async {
+    _probeBucket += 1;
+    setState(() {
+      _loggedOut = true;
+      _userIdController.clear();
+      _stableIdController.text = 'trz_qa_probe_$_probeBucket';
+    });
+    await _applyIdentity();
+  }
+
+  String? get _effectiveUserId {
+    final raw = _userIdController.text.trim();
+    if (_loggedOut || raw.isEmpty) return null;
+    return raw;
+  }
+
+  Future<void> _applyIdentity() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    try {
+      await controller.init(_buildConfig());
+      final variant = controller.getPlacement(_demoTrigger)?.variantId;
+      final stableId = controller.identity?.identifiers['stableID'];
+      _setEvent(
+        variant == null
+            ? 'Identity applied (no placement yet)'
+            : 'Identity applied → variant: $variant',
+      );
+      if (stableId != null) {
+        debugPrint('[Tranzmit harness] stableID: $stableId');
+      }
+    } on TranzmitError catch (error) {
+      setState(() => _lastError = '${error.code}: ${error.message}');
+      _setEvent('Identity update failed: ${error.code}');
+    }
   }
 
   Future<void> _refreshConfig() async {
@@ -101,7 +198,9 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
     final controller = _controller;
     if (controller == null) return;
 
-    final result = controller.presentPlacement(
+    late final GateResult result;
+    result = Tranzmit.presentPlacementInRoute(
+      context,
       _demoTrigger,
       onCTA: (product) async {
         _setEvent('CTA tapped: ${product.id} — starting host purchase flow');
@@ -113,6 +212,7 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
           'currency': 'INR',
         });
         _setEvent('reportConversion sent for ${product.id}');
+        result.dismiss();
       },
       onDismiss: () => _setEvent('Paywall dismissed'),
       onFallback: (event) {
@@ -170,10 +270,14 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final identity = controller?.identity;
+    final stableId = identity?.identifiers['stableID'];
     final placement = controller?.getPlacement(_demoTrigger);
     final spec = placement?.spec;
     final document = spec?.document;
     final htmlLoaded = document?.html != null && document!.html!.isNotEmpty;
+    final identityDirty = _isIdentityDirty(controller);
+    final activeVariant = placement?.variantId;
 
     return Scaffold(
       appBar: AppBar(
@@ -200,6 +304,122 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
                 if (_lastError != null) _StatusRow('Last error', _lastError!),
                 if (_lastEvent != null) _StatusRow('Last event', _lastEvent!),
               ],
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 0,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: Color(0xFFE5E7EB)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Statsig identity',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Statsig buckets on stableID when logged out. Set a stableID override or tap a variant preset, then apply identity.',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final key in _variantStableIds.keys)
+                          ActionChip(
+                            label: Text(key),
+                            backgroundColor: activeVariant == key
+                                ? const Color(0xFFE9D5FF)
+                                : null,
+                            onPressed: controller == null
+                                ? null
+                                : () => _applyVariantPreset(key),
+                          ),
+                        ActionChip(
+                          avatar: const Icon(Icons.shuffle, size: 18),
+                          label: const Text('Next bucket'),
+                          onPressed:
+                              controller == null ? null : _applyNextProbeBucket,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _stableIdController,
+                      decoration: const InputDecoration(
+                        labelText: 'stableID override',
+                        hintText: 'e.g. trz_qa_control',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _applyIdentity(),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _userIdController,
+                      enabled: !_loggedOut,
+                      decoration: const InputDecoration(
+                        labelText: 'userId (logged in only)',
+                        hintText: 'e.g. user_123',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _applyIdentity(),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Logged out (omit userId)'),
+                      subtitle: const Text(
+                        'Statsig should bucket on stableID for anonymous installs.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      value: _loggedOut,
+                      onChanged: (value) {
+                        setState(() => _loggedOut = value);
+                      },
+                    ),
+                    _StatusRow(
+                      'stableID',
+                      stableId ?? '—',
+                    ),
+                    _StatusRow(
+                      'Active userId',
+                      identity?.userId ?? '(none)',
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: controller == null ||
+                              (!identityDirty && controller.isReady)
+                          ? null
+                          : _applyIdentity,
+                      icon: const Icon(Icons.person),
+                      label: Text(
+                        identityDirty
+                            ? 'Apply identity & reload config'
+                            : 'Identity applied',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             _StatusCard(

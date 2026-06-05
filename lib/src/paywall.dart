@@ -1,9 +1,116 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'client.dart';
 import 'controller.dart';
 import 'models.dart';
 import 'provider.dart';
 import 'widgets/spec_renderer.dart';
+
+GateResult presentPaywallRoute({
+  required BuildContext context,
+  required TranzmitController controller,
+  required String trigger,
+  PresentationMode? presentation,
+  void Function(ProductSpec product)? onCTA,
+  VoidCallback? onDismiss,
+  void Function(FallbackEvent event)? onFallback,
+  VoidCallback? onImpression,
+}) {
+  if (!controller.isReady) {
+    onFallback?.call(
+      FallbackEvent(trigger: trigger, reason: FallbackReason.notReady),
+    );
+    return const GateResult(shown: false, dismiss: _noopDismissRoute);
+  }
+
+  final placement = controller.getPlacement(trigger);
+  if (placement == null) {
+    onFallback?.call(
+      FallbackEvent(trigger: trigger, reason: FallbackReason.placementNotFound),
+    );
+    return const GateResult(shown: false, dismiss: _noopDismissRoute);
+  }
+
+  final navigator = Navigator.of(context);
+  final shownAt = DateTime.now();
+  var completed = false;
+  var renderFailed = false;
+
+  late final Route<void> route;
+
+  void removeRoute() {
+    if (completed || !route.isActive) return;
+    route.navigator?.removeRoute(route);
+  }
+
+  void completeRoute() {
+    if (completed) return;
+    completed = true;
+    if (renderFailed) return;
+
+    controller.track('dismissal', {
+      ...attribution(trigger, placement),
+      'time_on_screen_ms': DateTime.now().difference(shownAt).inMilliseconds,
+    });
+    onDismiss?.call();
+  }
+
+  route = PageRouteBuilder<void>(
+    opaque: false,
+    barrierColor: Colors.transparent,
+    pageBuilder: (routeContext, animation, secondaryAnimation) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _PresentedSpec(
+            spec: placement.spec,
+            presentation: presentation ?? _presentationFromSpec(placement.spec),
+            onCTA: (product) {
+              controller.track('cta_click', {
+                ...attribution(trigger, placement),
+                'productId': product.id,
+              });
+              onCTA?.call(product);
+            },
+            onDismiss: removeRoute,
+            onError: (error) {
+              renderFailed = true;
+              controller.track('paywall_error', {
+                ...attribution(trigger, placement),
+                'reason': 'render_error',
+                'message': error.toString(),
+              });
+              onFallback?.call(
+                FallbackEvent(
+                  trigger: trigger,
+                  reason: FallbackReason.renderError,
+                  error: error,
+                  placement: placement,
+                  variantId: placement.variantId,
+                ),
+              );
+              removeRoute();
+            },
+          ),
+        ],
+      );
+    },
+  );
+
+  controller.track('impression', attribution(trigger, placement));
+  onImpression?.call();
+  unawaited(navigator.push(route).whenComplete(completeRoute));
+
+  return GateResult(
+    shown: true,
+    variantId: placement.variantId,
+    dismiss: removeRoute,
+  );
+}
+
+void _noopDismissRoute() {}
 
 class TranzmitPaywallHost extends StatelessWidget {
   const TranzmitPaywallHost({super.key, required this.controller});

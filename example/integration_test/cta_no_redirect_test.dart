@@ -10,7 +10,7 @@ import 'package:tranzmit_flutter/tranzmit_flutter.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('hosted CTA invokes callback without WebView redirect',
+  testWidgets('route CTA can show host dialog above the paywall',
       (tester) async {
     final client = TranzmitClient(
       storage: MemoryTranzmitStorage(),
@@ -18,6 +18,7 @@ void main() {
     );
     TranzmitController? controller;
     var ctaCount = 0;
+    var dialogShown = false;
 
     await tester.pumpWidget(
       TranzmitProvider(
@@ -36,11 +37,30 @@ void main() {
                   child: FilledButton(
                     key: const Key('present-paywall'),
                     onPressed: () {
-                      controller!.presentPlacement(
+                      late final GateResult result;
+                      result = Tranzmit.presentPlacementInRoute(
+                        context,
                         'upgrade_pro',
                         presentation: PresentationMode.fullscreen,
-                        onCTA: (_) {
+                        onCTA: (_) async {
                           ctaCount++;
+                          dialogShown = true;
+                          await showDialog<void>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              key: const Key('payment-dialog'),
+                              title: const Text('Payment failed'),
+                              content:
+                                  const Text('Try another payment method.'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Close'),
+                                ),
+                              ],
+                            ),
+                          );
+                          result.dismiss();
                         },
                       );
                     },
@@ -64,14 +84,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 2));
 
-    expect(controller!.activePaywalls, hasLength(1));
+    expect(controller!.activePaywalls, isEmpty);
 
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
     await tester.tapAt(Offset(size.width / 2, size.height / 2));
     await tester.pump(const Duration(milliseconds: 700));
 
     expect(ctaCount, 1);
-    expect(controller!.activePaywalls, hasLength(1));
+    expect(dialogShown, isTrue);
+    expect(find.byKey(const Key('payment-dialog')), findsOneWidget);
+    expect(find.text('Payment failed'), findsOneWidget);
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
 
     await client.flush();
   });

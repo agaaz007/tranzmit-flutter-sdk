@@ -222,6 +222,65 @@ result = tranzmit.presentPlacement(
 
 The SDK does not dismiss or navigate the paywall on CTA by itself. If `onCTA` is empty, the paywall stays on screen. Dismiss it from the host app only after checkout succeeds, or when the user cancels/closes the paywall.
 
+#### Payment UI Above The Paywall (Opt-In)
+
+Use the default `Tranzmit.of(context).presentPlacement(...)` for normal billing flows. It is the lightweight path and existing integrations do not need to change.
+
+Use `Tranzmit.presentPlacementInRoute(...)` only when the app must show Flutter UI after the hosted paywall CTA is tapped, while the paywall is still visible. Common examples:
+
+- Terms and conditions confirmation dialogs.
+- Razorpay or custom checkout bottom sheets.
+- Error dialogs or retry dialogs during payment.
+- Snackbars/toasts attached to the app scaffold.
+- A pushed payment or checkout screen.
+
+The route API presents that paywall through the app's `Navigator`, so UI opened later from `onCTA` appears above the paywall instead of behind it.
+
+```dart
+final tranzmit = Tranzmit.of(context);
+
+late final GateResult result;
+result = Tranzmit.presentPlacementInRoute(
+  context,
+  'upgrade_pro',
+  onCTA: (product) async {
+    final acceptedTerms = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Accept terms'),
+        content: const Text('Please accept the terms before checkout.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+
+    if (acceptedTerms != true) return;
+
+    final success = await startCheckout(product.id);
+    if (!success) return;
+
+    tranzmit.reportConversion({
+      'trigger': 'upgrade_pro',
+      'productId': product.id,
+      'revenue': 999,
+      'currency': 'INR',
+    });
+
+    result.dismiss();
+  },
+);
+```
+
+Only apps that call `presentPlacementInRoute` use the Navigator route path. The default `presentPlacement` API is unchanged and remains the recommended default when no post-CTA Flutter UI needs to appear above the paywall.
+
 ### Step 10: Verify The Integration
 
 Run this QA checklist before shipping:
@@ -422,6 +481,8 @@ Tranzmit does not call StoreKit, Google Play Billing, RevenueCat, Razorpay, or a
 This keeps purchases, restores, refunds, subscriptions, and entitlements under the customer app's control.
 
 CTA taps are callbacks, not redirects. Hosted paywall documents should call `window.Tranzmit.cta(productId)` or mark the CTA with `data-tranzmit-action="cta"`. The SDK also intercepts common hosted CTA links/buttons and prevents WebView navigation, so a CTA like `<a class="cta" href="...">Start Free Trial</a>` invokes `onCTA` instead of sending the user to a blank in-app WebView page. The SDK keeps the paywall visible on CTA; call `result.dismiss()` from the host app after checkout succeeds or when the host app wants to close it.
+
+If `onCTA` opens Flutter UI that must appear above the paywall, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement. This includes terms and conditions popups, payment bottom sheets, error dialogs, snackbars, and pushed checkout screens. Otherwise, keep using the default `Tranzmit.of(context).presentPlacement(...)`.
 
 ## Refresh During QA
 
