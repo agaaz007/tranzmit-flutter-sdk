@@ -32,6 +32,7 @@ class _SpecRendererState extends State<SpecRenderer> {
   String? _lastLoadedSignature;
   String? _lastReportedErrorSignature;
   bool _allowDocumentNavigation = false;
+  bool _isDocumentVisible = false;
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _SpecRendererState extends State<SpecRenderer> {
         oldWidget.spec.document?.css != widget.spec.document?.css ||
         oldWidget.spec.document?.js != widget.spec.document?.js) {
       _lastLoadedSignature = null;
+      _isDocumentVisible = false;
     }
   }
 
@@ -60,6 +62,7 @@ class _SpecRendererState extends State<SpecRenderer> {
         NavigationDelegate(
           onPageFinished: (_) {
             _allowDocumentNavigation = false;
+            _markDocumentVisible();
           },
           onWebResourceError: (error) {
             if (error.isForMainFrame == false) return;
@@ -93,6 +96,7 @@ class _SpecRendererState extends State<SpecRenderer> {
     if (message == null) return;
     final type = bridgeMessageType(message);
     if (!_isAllowed(type)) return;
+    if (type == 'ready') _markDocumentVisible();
 
     switch (type) {
       case 'cta':
@@ -109,6 +113,11 @@ class _SpecRendererState extends State<SpecRenderer> {
       case 'ready':
         return;
     }
+  }
+
+  void _markDocumentVisible() {
+    if (!mounted || _isDocumentVisible) return;
+    setState(() => _isDocumentVisible = true);
   }
 
   bool _isAllowed(String? type) {
@@ -152,7 +161,21 @@ class _SpecRendererState extends State<SpecRenderer> {
           child: SizedBox(
             width: viewport.width,
             height: viewport.height,
-            child: WebViewWidget(controller: _controller),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const _DocumentLoadingView(),
+                AnimatedOpacity(
+                  opacity: _isDocumentVisible ? 1 : 0,
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  child: IgnorePointer(
+                    ignoring: !_isDocumentVisible,
+                    child: WebViewWidget(controller: _controller),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -166,6 +189,9 @@ class _SpecRendererState extends State<SpecRenderer> {
     _lastLoadedSignature = signature;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastLoadedSignature != signature) return;
+      if (_isDocumentVisible) {
+        setState(() => _isDocumentVisible = false);
+      }
       _allowDocumentNavigation = true;
       unawaited(
         _controller
@@ -755,6 +781,27 @@ class _HostedDocumentParts {
     final value = match?.group(1) ?? match?.group(2) ?? match?.group(3);
     final trimmed = value?.trim();
     return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+}
+
+class _DocumentLoadingView extends StatelessWidget {
+  const _DocumentLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFE8E2F5),
+      child: Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: Color(0xFF7A3EE0),
+          ),
+        ),
+      ),
+    );
   }
 }
 
