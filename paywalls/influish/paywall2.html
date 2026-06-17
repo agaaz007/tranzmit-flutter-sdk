@@ -67,13 +67,13 @@
 
   .headline{text-align:center;font-size:46px;font-weight:900;color:var(--ink);line-height:1.0;letter-spacing:-1.6px;position:relative;}
   .headline .line2{color:var(--purple-d);display:block;position:relative;width:fit-content;margin:2px auto 0;}
-  .headline .line2 .underline{position:absolute;bottom:-5px;left:0;right:0;height:10px;}
+  .headline .line2 .underline{position:absolute;bottom:-10px;left:0;right:0;height:18px;overflow:visible;}
   .sparks{position:relative;display:flex;justify-content:center;margin-bottom:0;height:6px;}
   .sp{position:absolute;color:#dfb96a;}
 
-  .sub{text-align:center;font-size:13.5px;font-weight:400;color:#4d4958;line-height:1.42;letter-spacing:-.1px;margin:10px 0 14px;}
+  .sub{text-align:center;font-size:13.5px;font-weight:400;color:#4d4958;line-height:1.42;letter-spacing:-.1px;margin:12px 0;}
 
-  .stats{display:flex;gap:7px;margin-bottom:14px;}
+  .stats{display:flex;gap:7px;margin-bottom:10px;}
   .stat{
     flex:1;background:rgba(255,255,255,.82);border:1px solid rgba(220,210,245,.6);
     border-radius:14px;padding:13px 12px;
@@ -89,7 +89,7 @@
   .stat-num{font-size:15.5px;font-weight:800;color:var(--ink);letter-spacing:-.35px;line-height:1.08;white-space:nowrap;}
   .stat-lbl{font-size:11px;font-weight:500;color:#7a7686;line-height:1.15;letter-spacing:-.15px;margin-top:4px;white-space:nowrap;}
 
-  .price-wrap{margin:16px 0 12px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .price-wrap{margin:6px 0 12px;display:flex;flex-direction:column;align-items:center;gap:10px;}
   .offer-pill{
     position:static;z-index:2;
     background:linear-gradient(135deg,#9165ec,#7a3ee0);
@@ -236,10 +236,10 @@
   .sub{
     font-size:clamp(11.5px, 3.25vw, 12.5px);
     line-height:1.28;
-    margin:clamp(4px, 0.8vh, 8px) 0 clamp(6px, 1.2vh, 10px);
+    margin:clamp(8px, 1.35vh, 12px) 0;
   }
   .stats{
-    margin-bottom:clamp(10px, 1.7vh, 16px);
+    margin-bottom:clamp(6px, 1vh, 10px);
   }
   .stat{
     min-width:0;
@@ -265,8 +265,8 @@
     margin-top:clamp(3px, 0.6vh, 5px);
   }
   .price-wrap{
-    margin:clamp(6px, 1.1vh, 10px) 0 clamp(5px, 0.9vh, 8px);
-    gap:clamp(4px, 0.8vh, 6px);
+    margin:clamp(2px, 0.45vh, 5px) 0 clamp(6px, 1vh, 9px);
+    gap:clamp(8px, 1.25vh, 11px);
   }
   .offer-pill{
     font-size:clamp(10.5px, 3vw, 12px);
@@ -346,9 +346,14 @@
     }
     .sub{
       line-height:1.3;
+      margin-top:clamp(7px, 1vh, 10px);
+      margin-bottom:clamp(7px, 1vh, 10px);
+    }
+    .stats{
+      margin-bottom:clamp(5px, 0.8vh, 8px);
     }
     .price-wrap{
-      margin-top:6px;
+      margin-top:0;
     }
     .testi{
       padding:8px 10px;
@@ -417,7 +422,7 @@
         <h1 class="headline">
           Stay Active in
           <span class="line2">Every DM
-            <svg class="underline" viewBox="0 0 240 10" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path d="M4 7c20-6 50-6 60 0s40 6 60 0 50-6 60 0 30 5 52 0" stroke="#8d56d6" stroke-width="5" stroke-linecap="round" fill="none"/></svg>
+            <svg class="underline" viewBox="0 0 240 18" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path d="M4 10C27 4 50 4 66 10C84 16 106 16 124 10C143 4 166 4 184 10C202 16 219 16 236 10" stroke="#8d56d6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
           </span>
         </h1>
 

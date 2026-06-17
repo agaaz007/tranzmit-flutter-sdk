@@ -138,8 +138,8 @@
   .fc-title{font-size:25px;font-weight:800;color:var(--ink);line-height:1.12;letter-spacing:-.6px;margin-bottom:9px;}
   .fc-title .pp{color:var(--purple-mid);}
   .fc-body{font-size:16.5px;font-weight:400;color:var(--body);line-height:1.33;max-width:210px;letter-spacing:-.1px;}
-  .feature-card-ui .fc-left{margin-left:-12px;}
-  .feature-card-ui .fc-title{font-weight:700;}
+  .feature-card-ui .fc-left{margin-left:10px;}
+  .feature-card-ui .fc-title{font-weight:800;}
 
   /* ---------- phone in replies card ---------- */
   .phone2{position:absolute;right:20px;top:18px;width:168px;height:260px;z-index:1;}
@@ -466,7 +466,7 @@
   :root{
     --fc-card-h:clamp(170px, 21vh, 218px);
     --fc-phone-scale:clamp(0.42, calc(var(--influish-vw) / 880), 0.50);
-    --fc-ui-scale:clamp(0.48, calc(var(--influish-vw) / 720), 0.58);
+    --fc-ui-scale:clamp(0.30, calc(var(--influish-vw) / 1280), 0.36);
   }
   .feature-vp,
   .test-wrap{
@@ -564,10 +564,10 @@
   .ai-stack,
   .dash{
     position:absolute !important;
-    right:clamp(10px, 3vw, 18px) !important;
+    right:clamp(-8px, -0.6vw, -2px) !important;
     top:auto !important;
     bottom:clamp(8px, 1.3vh, 14px) !important;
-    width:184px !important;
+    width:154px !important;
     max-width:none;
     height:auto !important;
     margin:0 !important;
@@ -580,12 +580,15 @@
     gap:clamp(4px, 1vh, 7px) !important;
   }
   .feature-card-ui .fc-left{
-    width:min(51%, 186px);
-    max-width:186px !important;
-    margin-left:-14px;
+    width:min(56%, 198px);
+    max-width:198px !important;
+    margin-left:clamp(8px, 2.4vw, 12px);
+  }
+  .feature-card-ui .fc-title{
+    max-width:188px;
   }
   .feature-card-ui .fc-body{
-    max-width:160px !important;
+    max-width:178px !important;
   }
 
   /* Dot row */
@@ -681,7 +684,7 @@
     :root{
       --fc-card-h:clamp(144px, 17.6vh, 178px);
       --fc-phone-scale:clamp(0.37, calc(var(--influish-vw) / 1020), 0.44);
-      --fc-ui-scale:clamp(0.42, calc(var(--influish-vw) / 850), 0.50);
+      --fc-ui-scale:clamp(0.27, calc(var(--influish-vw) / 1320), 0.31);
     }
     .subhead{ display:none; }
     .join{ font-size:clamp(14px, 4.2vw, 18px); margin:2px 0; }
@@ -693,10 +696,13 @@
     .fc-title{ font-size:clamp(14px, 4.2vw, 18px); }
     .fc-body{ font-size:clamp(10px, 2.9vw, 12px); }
     .feature-card-phone .fc-left{ width:min(62%, 198px); }
-    .feature-card-ui .fc-left{ width:min(54%, 172px); }
+    .feature-card-ui .fc-left{
+      width:min(56%, 176px);
+      margin-left:clamp(6px, 2vw, 10px);
+    }
     .phone2{ right:clamp(12px, 4vw, 20px) !important; bottom:-8px !important; }
     .ai-stack,
-    .dash{ right:clamp(6px, 2vw, 12px) !important; bottom:8px !important; }
+    .dash{ right:clamp(-10px, -0.6vw, -4px) !important; bottom:8px !important; }
     .test-wrap{ display:none; }
     .price-card{ margin:4px 0 4px; padding:8px 12px; }
     .price-num{ font-size:clamp(30px, 10vw, 40px); }
