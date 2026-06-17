@@ -14,6 +14,7 @@ class SpecRenderer extends StatefulWidget {
     required this.onCTA,
     required this.onDismiss,
     this.onError,
+    this.onReady,
     this.presentation = PresentationMode.sheet,
   });
 
@@ -22,6 +23,7 @@ class SpecRenderer extends StatefulWidget {
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
   final void Function(Object error)? onError;
+  final VoidCallback? onReady;
 
   @override
   State<SpecRenderer> createState() => _SpecRendererState();
@@ -33,6 +35,7 @@ class _SpecRendererState extends State<SpecRenderer> {
   String? _lastReportedErrorSignature;
   bool _allowDocumentNavigation = false;
   bool _isDocumentVisible = false;
+  bool _reportedReady = false;
 
   @override
   void initState() {
@@ -51,6 +54,7 @@ class _SpecRendererState extends State<SpecRenderer> {
         oldWidget.spec.document?.js != widget.spec.document?.js) {
       _lastLoadedSignature = null;
       _isDocumentVisible = false;
+      _reportedReady = false;
     }
   }
 
@@ -116,8 +120,13 @@ class _SpecRendererState extends State<SpecRenderer> {
   }
 
   void _markDocumentVisible() {
-    if (!mounted || _isDocumentVisible) return;
-    setState(() => _isDocumentVisible = true);
+    if (!mounted) return;
+    if (!_isDocumentVisible) {
+      setState(() => _isDocumentVisible = true);
+    }
+    if (_reportedReady) return;
+    _reportedReady = true;
+    widget.onReady?.call();
   }
 
   bool _isAllowed(String? type) {
@@ -192,6 +201,7 @@ class _SpecRendererState extends State<SpecRenderer> {
       if (_isDocumentVisible) {
         setState(() => _isDocumentVisible = false);
       }
+      _reportedReady = false;
       _allowDocumentNavigation = true;
       unawaited(
         _controller

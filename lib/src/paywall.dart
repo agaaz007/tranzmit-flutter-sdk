@@ -123,21 +123,101 @@ class TranzmitPaywallHost extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         final activePaywalls = controller.activePaywalls;
-        if (activePaywalls.isEmpty) return const SizedBox.shrink();
+        final preloadedPaywalls = controller.preloadedPaywalls
+            .where((preload) => preload.status != PreloadStatus.failed)
+            .toList(growable: false);
+        if (activePaywalls.isEmpty && preloadedPaywalls.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final activeByTrigger = <String, ActivePaywall>{
+          for (final active in activePaywalls) active.trigger: active,
+        };
+        final warmTriggers =
+            preloadedPaywalls.map((preload) => preload.trigger).toSet();
 
         return Stack(
           children: [
+            for (final preload in preloadedPaywalls)
+              if (!activeByTrigger.containsKey(preload.trigger))
+                _WarmPaywallSlot(
+                  preload: preload,
+                  active: null,
+                  controller: controller,
+                ),
+            for (final preload in preloadedPaywalls)
+              if (activeByTrigger.containsKey(preload.trigger))
+                _WarmPaywallSlot(
+                  preload: preload,
+                  active: activeByTrigger[preload.trigger],
+                  controller: controller,
+                ),
             for (final active in activePaywalls)
-              _PresentedPaywall(
-                active: active,
-                onCTA: (product) => controller.handleCTA(active, product),
-                onDismiss: () => controller.dismissPaywall(active.id),
-                onError: (error) =>
-                    controller.handlePaywallError(active, error),
-              ),
+              if (!warmTriggers.contains(active.trigger))
+                _PresentedPaywall(
+                  active: active,
+                  onCTA: (product) => controller.handleCTA(active, product),
+                  onDismiss: () => controller.dismissPaywall(active.id),
+                  onError: (error) =>
+                      controller.handlePaywallError(active, error),
+                ),
           ],
         );
       },
+    );
+  }
+}
+
+class _WarmPaywallSlot extends StatelessWidget {
+  const _WarmPaywallSlot({
+    required this.preload,
+    required this.active,
+    required this.controller,
+  });
+
+  final PreloadedPaywall preload;
+  final ActivePaywall? active;
+  final TranzmitController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentActive = active;
+    final isVisible = currentActive != null;
+    return KeyedSubtree(
+      key: ValueKey('tranzmit-preload:${preload.key}'),
+      child: ExcludeSemantics(
+        excluding: !isVisible,
+        child: IgnorePointer(
+          ignoring: !isVisible,
+          child: Opacity(
+            opacity: isVisible ? 1 : 0.001,
+            child: _PresentedSpec(
+              spec: preload.placement.spec,
+              presentation: preload.presentation,
+              onCTA: (product) {
+                if (currentActive == null) return;
+                controller.handleCTA(currentActive, product);
+              },
+              onDismiss: () {
+                if (currentActive == null) return;
+                controller.dismissPaywall(currentActive.id);
+              },
+              onError: (error) {
+                if (currentActive == null) {
+                  controller.markPreloadFailed(
+                      preload.trigger, preload.key, error);
+                  return;
+                }
+                controller.handlePaywallError(currentActive, error);
+              },
+              onReady: () => controller.markPreloadReady(
+                preload.trigger,
+                preload.key,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -260,6 +340,7 @@ class _PresentedSpec extends StatelessWidget {
     required this.onCTA,
     required this.onDismiss,
     this.onError,
+    this.onReady,
   });
 
   final PaywallSpec spec;
@@ -267,6 +348,7 @@ class _PresentedSpec extends StatelessWidget {
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
   final void Function(Object error)? onError;
+  final VoidCallback? onReady;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +359,7 @@ class _PresentedSpec extends StatelessWidget {
         onCTA: onCTA,
         onDismiss: onDismiss,
         onError: onError,
+        onReady: onReady,
       );
     }
 
@@ -293,6 +376,7 @@ class _PresentedSpec extends StatelessWidget {
                   onCTA: onCTA,
                   onDismiss: onDismiss,
                   onError: onError,
+                  onReady: onReady,
                 ),
               ),
               if (!_paywallProvidesHostedDismissControl(spec))
@@ -329,6 +413,7 @@ class _PresentedSpec extends StatelessWidget {
                     onCTA: onCTA,
                     onDismiss: onDismiss,
                     onError: onError,
+                    onReady: onReady,
                   ),
                 ),
               ),
@@ -360,6 +445,7 @@ class _PresentedSpec extends StatelessWidget {
                     onCTA: onCTA,
                     onDismiss: onDismiss,
                     onError: onError,
+                    onReady: onReady,
                   ),
                 ),
               ),

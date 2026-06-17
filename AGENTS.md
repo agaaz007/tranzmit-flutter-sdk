@@ -88,7 +88,26 @@ TranzmitConfig(
 
 If the user is logged out, omit `userId`. The SDK generates `stableID`; do not generate a fake user ID.
 
-### Step 6: Present The Placement
+### Step 6: Preload The Placement
+
+After the SDK is ready, warm hosted paywalls before the user taps the upgrade button:
+
+```dart
+final tranzmit = Tranzmit.of(context);
+
+if (tranzmit.isReady) {
+  final preload = await tranzmit.preloadPlacement('upgrade_pro');
+  debugPrint('Tranzmit preload: ${preload.status.name}');
+}
+```
+
+`preloadPlacement()` mounts a hidden but attached WebView in `TranzmitProvider`, loads the hosted document, and completes when the WebView finishes loading or the document posts a `ready` bridge event.
+
+Preloading does not send an impression, does not report conversion, and does not show UI. The impression fires only when the host app later calls `presentPlacement()`.
+
+Use preloading with the default `Tranzmit.of(context).presentPlacement(...)` provider-overlay path. `Tranzmit.presentPlacementInRoute(...)` is still available for post-CTA Flutter UI layering, but that route path is opt-in and does not reuse the warmed provider slot.
+
+### Step 7: Present The Placement
 
 At the upgrade point, call:
 
@@ -122,7 +141,7 @@ Replace `upgrade_pro` with the dashboard trigger if Tranzmit supplied a differen
 
 The SDK does not dismiss the paywall on CTA by itself. If `onCTA` is empty, the paywall stays visible. Call `result.dismiss()` from the host app after checkout succeeds, or when the user closes the paywall.
 
-### Step 7: Wire Billing Safely
+### Step 8: Wire Billing Safely
 
 `onCTA` receives a Tranzmit `ProductSpec`.
 
@@ -162,7 +181,8 @@ result = tranzmit.presentPlacement(
 CTA taps are callbacks, not WebView redirects. Do not navigate the hosted paywall to Razorpay or `about:blank`; keep checkout in Flutter `onCTA`.
 
 Use `Tranzmit.of(context).presentPlacement(...)` by default. It is the
-lightweight provider-overlay path and keeps existing deployments unchanged.
+lightweight provider-overlay path, keeps existing deployments unchanged, and
+reuses any ready slot created by `preloadPlacement()`.
 
 Use `Tranzmit.presentPlacementInRoute(...)` only when the host app must show
 Flutter UI above the paywall after the hosted CTA is tapped, while the paywall
@@ -216,7 +236,7 @@ Only use `presentPlacementInRoute` for this layering case. The route API is
 opt-in per placement call; do not change global SDK config or migrate customers
 who do not need post-CTA Flutter UI above the paywall.
 
-### Step 8: Verify Locally
+### Step 9: Verify Locally
 
 Before marking the task done:
 
@@ -226,13 +246,15 @@ Before marking the task done:
 4. Confirm `Tranzmit.of(context).isReady` becomes `true`.
 5. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement.
 6. Confirm the placement's product ID matches the expected billing product.
-7. Trigger `presentPlacement('upgrade_pro')`.
-8. Confirm the remote paywall renders.
-9. Tap CTA and confirm the host billing flow starts for the expected product.
-10. Complete a sandbox/test purchase.
-11. Confirm `reportConversion()` is called after success.
+7. Call `await Tranzmit.of(context).preloadPlacement('upgrade_pro')`.
+8. Confirm the preload reaches `PreloadStatus.ready`.
+9. Trigger `presentPlacement('upgrade_pro')`.
+10. Confirm the remote paywall renders without a blank cold WebView moment.
+11. Tap CTA and confirm the host billing flow starts for the expected product.
+12. Complete a sandbox/test purchase.
+13. Confirm `reportConversion()` is called after success.
 
-### Step 9: Verify Remote Config
+### Step 10: Verify Remote Config
 
 During QA:
 
@@ -241,7 +263,7 @@ During QA:
 3. Present the placement again.
 4. Confirm the app reflects the dashboard change without an app release.
 
-### Step 10: Final Acceptance Checklist
+### Step 11: Final Acceptance Checklist
 
 The integration is not complete until all of these are true:
 
@@ -354,7 +376,9 @@ TranzmitConfig(
 
 Always pass `userId` when the app has a logged-in user. Omit `userId` when the user is logged out.
 
-The SDK always adds a generated `stableID` under `identity.identifiers.stableID`. For paywall experiments, Statsig should bucket on `stableID` so logged-out and logged-in requests from the same install keep the same paywall variant.
+The SDK always adds a generated `stableID` under `identity.identifiers.stableID`.
+
+**Statsig randomization unit:** If your Statsig experiment uses **User ID** (the default), pass the real app `userId` when the user is logged in. The Tranzmit server maps that to Statsig `userID`. When logged out, the server falls back to `stableID` as Statsig `userID` so anonymous installs still bucket. If your experiment intentionally randomizes on the custom id `stableID` instead, configure that in Statsig Console — both `userID` and `customIDs.stableID` are sent when available.
 
 Logged-out payload shape:
 
@@ -386,6 +410,19 @@ Do not generate a random `userId` for logged-out users. Let the SDK's `stableID`
 ## Presenting The Paywall
 
 Call `presentPlacement` where the app normally starts an upgrade flow.
+
+When the app can anticipate the upgrade moment, preload the placement first:
+
+```dart
+final preload = await Tranzmit.of(context).preloadPlacement('upgrade_pro');
+if (!preload.ready) {
+  debugPrint('Tranzmit preload failed: ${preload.error}');
+}
+```
+
+If preload is still loading or failed when the user taps upgrade, still call
+`presentPlacement()`. The SDK uses the warm slot when available and falls back
+to the normal hosted renderer path otherwise.
 
 ```dart
 final tranzmit = Tranzmit.of(context);
@@ -441,12 +478,13 @@ After integration:
 1. Launch the app and confirm no `onError` logs.
 2. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement after init.
 3. Confirm the placement product ID matches the dashboard **Billing Product ID**.
-4. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders.
-5. Tap CTA and confirm the host purchase flow starts for `product.id`.
-6. Complete a test purchase and confirm `reportConversion()` runs.
-7. Change paywall copy, Billing Product ID, or variant setup in the dashboard.
-8. Call `await Tranzmit.of(context).refreshConfig()`.
-9. Present again and confirm remote changes are visible.
+4. Call `preloadPlacement('upgrade_pro')` and confirm it reaches `ready`.
+5. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders without a blank cold WebView moment.
+6. Tap CTA and confirm the host purchase flow starts for `product.id`.
+7. Complete a test purchase and confirm `reportConversion()` runs.
+8. Change paywall copy, Billing Product ID, or variant setup in the dashboard.
+9. Call `await Tranzmit.of(context).refreshConfig()`.
+10. Preload and present again, then confirm remote changes are visible.
 
 ## Statsig Checklist
 
@@ -456,7 +494,7 @@ For dynamic paywalls:
 2. The placement must have a Statsig experiment id.
 3. The Statsig experiment must return a parameter named `variant_id`.
 4. `variant_id` values must match Tranzmit variant keys exactly.
-5. Paywall experiments should bucket on custom id `stableID`.
+5. Paywall experiments should bucket on Statsig **User ID** when users are logged in (pass real `userId`). For logged-out traffic, the server uses `stableID` as Statsig `userID`, or you can configure Statsig to randomize on custom id `stableID`.
 6. Logged-in apps should still pass real `userId` for analytics.
 
 Expected variant keys for the current demo setup:
@@ -465,10 +503,93 @@ Expected variant keys for the current demo setup:
 - `intro_offer`
 - `annual_pro`
 
+## Automated QA Testing Agent
+
+The SDK ships with a CLI-driven QA agent (`tool/qa_agent.dart`) that automates the full integration verification checklist. It boots the app on an emulator, intercepts HTTP traffic via a local proxy, and validates that events reach Railway correctly.
+
+### Quick Start
+
+```bash
+# Test the SDK's own example app
+dart run tool/qa_agent.dart \
+  --app-path=example \
+  --public-key=pk_test_2a8a5f07d4b9fcf1cc77e024 \
+  --trigger=upgrade_pro \
+  --expected-product=pro_monthly \
+  --platform=ios
+
+# Test a customer app
+dart run tool/qa_agent.dart \
+  --app-path=/path/to/customer/app \
+  --public-key=pk_live_abc123 \
+  --trigger=upgrade_pro \
+  --expected-product=com.customer.pro.monthly \
+  --platform=android \
+  --json-output=qa_report.json
+```
+
+### CLI Options
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--app-path` | Yes | — | Path to the Flutter app directory |
+| `--public-key` | Yes | — | Tranzmit public key |
+| `--trigger` | No | `upgrade_pro` | Placement trigger |
+| `--expected-product` | No | — | Expected billing product ID to validate |
+| `--platform` | No | `ios` | Target: `ios` or `android` |
+| `--proxy-port` | No | `9877` | Local intercepting proxy port |
+| `--upstream` | No | Railway prod URL | Backend API to forward traffic to |
+| `--integration-test` | No | — | Use `flutter drive` with integration_test |
+| `--json-output` | No | — | Write structured JSON report to file |
+
+### What It Checks
+
+The agent runs 12 automated checks derived from the AGENTS.md verification checklist:
+
+1. **pub_get** — Dependency resolves
+2. **app_boots** — App launches without crash
+3. **no_errors** — No `onError` callbacks fired
+4. **sdk_ready** — `isReady` becomes true
+5. **placement_fetched** — `/v1/config` returns an enabled placement
+6. **product_id_match** — Product ID matches expected billing product
+7. **paywall_renders** — WebView paywall appears
+8. **cta_fires** — CTA tap sends `cta_click` event with correct productId
+9. **conversion_reported** — `reportConversion()` has full attribution (variantId, variant_key, placement_id, trigger, productId, revenue, currency)
+10. **identity_correct** — Events include `stableID` + `sessionId`
+11. **refresh_config** — `refreshConfig()` triggers a new `/v1/config` call
+12. **config_change_reflected** — Placement data updates after refresh
+
+### Customer App Requirements
+
+For the QA agent to work against a customer app:
+
+1. The app must accept `--dart-define=TRANZMIT_API_BASE_URL=...` so the proxy can intercept traffic.
+2. The upgrade/paywall trigger must be reachable via a known tap target.
+3. If billing is real (not mocked), the agent stops at the CTA check.
+
+The SDK's example app (`example/`) already satisfies all requirements and supports full end-to-end testing with a simulated purchase flow.
+
+### Architecture
+
+```
+CLI (dart run tool/qa_agent.dart)
+  ├── Local HTTP Proxy (port 9877)
+  │     └── Captures /v1/config and /v1/events
+  │     └── Forwards to real Railway API
+  ├── Flutter Driver / integration_test
+  │     └── Automates the app on emulator
+  │     └── Test target: example/integration_test/qa_flow_test.dart
+  │     └── Driver: example/test_driver/qa_flow_driver.dart
+  └── Event Validator + Report Formatter
+        └── Runs 12 checks against captured traffic
+        └── Outputs terminal table + optional JSON
+```
+
 ## Common Mistakes
 
 - Importing the wrong package name. Use `tranzmit_flutter`, not `tranzmit-flutter-sdk`.
 - Calling `presentPlacement()` before `TranzmitProvider` is in the widget tree.
+- Calling `preloadPlacement()` before the SDK is ready, then assuming a failed preload warmed the WebView.
 - Forgetting to pass the public key supplied by Tranzmit.
 - Generating random logged-out user IDs instead of relying on `stableID`.
 - Hardcoding paywall UI in the host app.

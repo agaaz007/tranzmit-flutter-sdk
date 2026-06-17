@@ -20,6 +20,9 @@ export 'src/controller.dart'
         GateOptions,
         GateResult,
         PresentationMode,
+        PreloadResult,
+        PreloadStatus,
+        PreloadedPaywall,
         TranzmitController;
 export 'src/models.dart';
 export 'src/provider.dart' show Tranzmit, TranzmitProvider;

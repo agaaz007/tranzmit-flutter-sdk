@@ -9,6 +9,24 @@ enum PresentationMode { modal, sheet, fullscreen, inline }
 
 enum FallbackReason { notReady, placementNotFound, renderError }
 
+enum PreloadStatus { loading, ready, failed }
+
+class PreloadResult {
+  const PreloadResult({
+    required this.trigger,
+    required this.status,
+    this.variantId,
+    this.error,
+  });
+
+  final String trigger;
+  final PreloadStatus status;
+  final String? variantId;
+  final Object? error;
+
+  bool get ready => status == PreloadStatus.ready;
+}
+
 class FallbackEvent {
   const FallbackEvent({
     required this.trigger,
@@ -71,11 +89,35 @@ class ActivePaywall {
   final DateTime shownAt;
 }
 
+class PreloadedPaywall {
+  PreloadedPaywall._({
+    required this.trigger,
+    required this.placement,
+    required this.presentation,
+    required this.key,
+    required this.requestedAt,
+    required Completer<PreloadResult> completer,
+  }) : _completer = completer;
+
+  final String trigger;
+  final PlacementConfig placement;
+  final PresentationMode presentation;
+  final String key;
+  final DateTime requestedAt;
+  final Completer<PreloadResult> _completer;
+  PreloadStatus status = PreloadStatus.loading;
+  Object? error;
+
+  String? get variantId => placement.variantId;
+}
+
 class TranzmitController extends ChangeNotifier {
   TranzmitController(this._client);
 
   final TranzmitClient _client;
   final Map<String, ActivePaywall> _activePaywalls = <String, ActivePaywall>{};
+  final Map<String, PreloadedPaywall> _preloadedPaywalls =
+      <String, PreloadedPaywall>{};
 
   bool _isReady = false;
   bool _disposed = false;
@@ -85,10 +127,13 @@ class TranzmitController extends ChangeNotifier {
   TranzmitIdentity? get identity => _client.identity;
   List<ActivePaywall> get activePaywalls =>
       List<ActivePaywall>.unmodifiable(_activePaywalls.values);
+  List<PreloadedPaywall> get preloadedPaywalls =>
+      List<PreloadedPaywall>.unmodifiable(_preloadedPaywalls.values);
 
   Future<void> init(TranzmitConfig config) async {
     _setReady(false);
     _activePaywalls.clear();
+    _clearPreloads();
     _notifyIfAlive();
 
     await _client.init(config);
@@ -98,6 +143,7 @@ class TranzmitController extends ChangeNotifier {
   Future<void> refreshConfig() async {
     _setReady(false);
     _activePaywalls.clear();
+    _clearPreloads();
     _notifyIfAlive();
 
     await _client.refreshConfig();
@@ -106,6 +152,55 @@ class TranzmitController extends ChangeNotifier {
 
   PlacementConfig? getPlacement(String trigger) =>
       _client.getPlacement(trigger);
+
+  Future<PreloadResult> preloadPlacement(
+    String trigger, {
+    PresentationMode? presentation,
+  }) async {
+    if (!_client.isReady) {
+      return PreloadResult(trigger: trigger, status: PreloadStatus.failed);
+    }
+
+    final placement = _client.getPlacement(trigger);
+    if (placement == null) {
+      return PreloadResult(trigger: trigger, status: PreloadStatus.failed);
+    }
+
+    final resolvedPresentation =
+        presentation ?? _presentationFromSpec(placement.spec);
+    final key = _preloadKey(trigger, placement, resolvedPresentation);
+    final existing = _preloadedPaywalls[trigger];
+    if (existing != null && existing.key == key) {
+      if (existing.status == PreloadStatus.ready) {
+        return PreloadResult(
+          trigger: trigger,
+          status: PreloadStatus.ready,
+          variantId: existing.variantId,
+        );
+      }
+      if (existing.status == PreloadStatus.failed) {
+        return PreloadResult(
+          trigger: trigger,
+          status: PreloadStatus.failed,
+          variantId: existing.variantId,
+          error: existing.error,
+        );
+      }
+      return existing._completer.future;
+    }
+
+    final completer = Completer<PreloadResult>();
+    _preloadedPaywalls[trigger] = PreloadedPaywall._(
+      trigger: trigger,
+      placement: placement,
+      presentation: resolvedPresentation,
+      key: key,
+      requestedAt: DateTime.now(),
+      completer: completer,
+    );
+    _notifyIfAlive();
+    return completer.future;
+  }
 
   GateResult gate(String trigger, [GateOptions options = const GateOptions()]) {
     if (!_client.isReady) {
@@ -126,6 +221,14 @@ class TranzmitController extends ChangeNotifier {
       return _noopResult;
     }
 
+    final resolvedPresentation =
+        options.presentation ?? _presentationFromSpec(placement.spec);
+    _dropStalePreload(trigger, placement, resolvedPresentation);
+    final preload = _preloadedPaywalls[trigger];
+    if (preload != null && preload.status == PreloadStatus.failed) {
+      _preloadedPaywalls.remove(trigger);
+    }
+
     final existing = _activePaywalls[trigger];
     if (existing != null) {
       return GateResult(
@@ -139,8 +242,7 @@ class TranzmitController extends ChangeNotifier {
       id: trigger,
       trigger: trigger,
       placement: placement,
-      presentation:
-          options.presentation ?? _presentationFromSpec(placement.spec),
+      presentation: resolvedPresentation,
       options: options,
       shownAt: DateTime.now(),
     );
@@ -211,6 +313,44 @@ class TranzmitController extends ChangeNotifier {
     _notifyIfAlive();
   }
 
+  void markPreloadReady(String trigger, String key) {
+    final preload = _preloadedPaywalls[trigger];
+    if (preload == null || preload.key != key) return;
+    if (preload.status == PreloadStatus.ready) return;
+
+    preload.status = PreloadStatus.ready;
+    preload.error = null;
+    if (!preload._completer.isCompleted) {
+      preload._completer.complete(
+        PreloadResult(
+          trigger: trigger,
+          status: PreloadStatus.ready,
+          variantId: preload.variantId,
+        ),
+      );
+    }
+    _notifyIfAlive();
+  }
+
+  void markPreloadFailed(String trigger, String key, Object error) {
+    final preload = _preloadedPaywalls[trigger];
+    if (preload == null || preload.key != key) return;
+
+    preload.status = PreloadStatus.failed;
+    preload.error = error;
+    if (!preload._completer.isCompleted) {
+      preload._completer.complete(
+        PreloadResult(
+          trigger: trigger,
+          status: PreloadStatus.failed,
+          variantId: preload.variantId,
+          error: error,
+        ),
+      );
+    }
+    _notifyIfAlive();
+  }
+
   void handlePaywallError(ActivePaywall active, Object error) {
     _client.track('paywall_error', {
       ...attribution(active.trigger, active.placement),
@@ -244,11 +384,63 @@ class TranzmitController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  void _clearPreloads() {
+    for (final preload in _preloadedPaywalls.values) {
+      if (!preload._completer.isCompleted) {
+        preload._completer.complete(
+          PreloadResult(
+            trigger: preload.trigger,
+            status: PreloadStatus.failed,
+            variantId: preload.variantId,
+          ),
+        );
+      }
+    }
+    _preloadedPaywalls.clear();
+  }
+
+  void _dropStalePreload(
+    String trigger,
+    PlacementConfig placement,
+    PresentationMode presentation,
+  ) {
+    final preload = _preloadedPaywalls[trigger];
+    if (preload == null) return;
+    if (preload.key == _preloadKey(trigger, placement, presentation)) return;
+
+    if (!preload._completer.isCompleted) {
+      preload._completer.complete(
+        PreloadResult(
+          trigger: preload.trigger,
+          status: PreloadStatus.failed,
+          variantId: preload.variantId,
+        ),
+      );
+    }
+    _preloadedPaywalls.remove(trigger);
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _clearPreloads();
     super.dispose();
   }
+}
+
+String _preloadKey(
+  String trigger,
+  PlacementConfig placement,
+  PresentationMode presentation,
+) {
+  final spec = placement.spec;
+  return [
+    trigger,
+    placement.variantId,
+    presentation.name,
+    spec.cacheKey,
+    spec.revision,
+  ].join('|');
 }
 
 PresentationMode _presentationFromSpec(PaywallSpec spec) {

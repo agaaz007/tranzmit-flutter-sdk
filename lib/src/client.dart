@@ -144,6 +144,7 @@ class TranzmitClient {
   bool _initialized = false;
   Future<void>? _initFuture;
   String? _currentInitKey;
+  int _initGeneration = 0;
   String _sessionId = _generateSessionId();
   List<QueuedEvent> _queue = <QueuedEvent>[];
   Timer? _timer;
@@ -179,7 +180,8 @@ class TranzmitClient {
     _initialized = false;
     _sessionId = _generateSessionId();
 
-    _initFuture = _initFromCacheThenNetwork(config, identity);
+    final generation = ++_initGeneration;
+    _initFuture = _initFromCacheThenNetwork(config, identity, generation);
     await _initFuture!;
   }
 
@@ -257,12 +259,13 @@ class TranzmitClient {
     _queue.clear();
 
     try {
+      final userId = _currentIdentity?.userId ?? config.userId;
       final response = await _httpClient.post(
         Uri.parse('${config.resolvedApiBaseUrl}/v1/events'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
           'publicKey': config.publicKey,
-          if (config.userId != null) 'userId': config.userId,
+          if (userId != null) 'userId': userId,
           if (_currentIdentity != null) 'identity': _currentIdentity!.toJson(),
           'traits': config.userTraits ?? <String, Object?>{},
           'privateTraits': config.privateTraits ?? <String, Object?>{},
@@ -299,6 +302,7 @@ class TranzmitClient {
     _initialized = false;
     _initFuture = null;
     _currentInitKey = null;
+    _initGeneration++;
     _sessionId = _generateSessionId();
     _queue = <QueuedEvent>[];
   }
@@ -306,23 +310,27 @@ class TranzmitClient {
   Future<void> _initFromCacheThenNetwork(
     TranzmitConfig config,
     TranzmitIdentity identity,
+    int generation,
   ) async {
     final cached = await _getCachedConfig(config, identity);
+    if (generation != _initGeneration) return;
     if (cached != null) {
       _configResponse = cached;
       _initialized = true;
       track('page_view');
-      unawaited(_refreshBestEffort(config, identity));
+      unawaited(_refreshBestEffort(config, identity, generation));
       return;
     }
 
     try {
       final fresh = await _fetchConfig(config, identity);
+      if (generation != _initGeneration) return;
       _configResponse = fresh;
       _initialized = true;
       await _setCachedConfig(config, identity, fresh);
       track('page_view');
     } catch (error) {
+      if (generation != _initGeneration) return;
       final tranzmitError = TranzmitError(
         'config_fetch_failed',
         error.toString(),
@@ -338,9 +346,11 @@ class TranzmitClient {
   Future<void> _refreshBestEffort(
     TranzmitConfig config,
     TranzmitIdentity identity,
+    int generation,
   ) async {
     try {
       final fresh = await _fetchConfig(config, identity);
+      if (generation != _initGeneration) return;
       _configResponse = fresh;
       await _setCachedConfig(config, identity, fresh);
     } catch (error) {
@@ -399,6 +409,7 @@ class TranzmitClient {
           headers: const {'Content-Type': 'application/json'},
           body: jsonEncode({
             'publicKey': config.publicKey,
+            if (identity.userId != null) 'userId': identity.userId,
             'identity': identity.toJson(),
             'traits': config.userTraits ?? <String, Object?>{},
             'privateTraits': config.privateTraits ?? <String, Object?>{},

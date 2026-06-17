@@ -118,7 +118,24 @@ TranzmitConfig(
 
 For paywall experiments, Statsig should bucket on the custom ID `stableID`. This keeps logged-out and logged-in requests from the same install in the same experiment bucket.
 
-### Step 7: Present The Paywall At The Upgrade Moment
+### Step 7: Preload The Paywall Before The Upgrade Tap
+
+Call `preloadPlacement()` after the SDK is ready if the app knows the user may soon hit an upgrade point. This mounts a hidden, attached WebView inside `TranzmitProvider`, loads the hosted HTML early, and keeps that warm slot ready for `presentPlacement()`.
+
+```dart
+final tranzmit = Tranzmit.of(context);
+
+if (tranzmit.isReady) {
+  final preload = await tranzmit.preloadPlacement('upgrade_pro');
+  debugPrint('Tranzmit preload: ${preload.status.name}');
+}
+```
+
+Preloading does not send an impression and does not show UI. The impression event fires only when the app later calls `presentPlacement()` and the paywall is revealed.
+
+Use preloading with the default `Tranzmit.of(context).presentPlacement(...)` path. If the app must use `Tranzmit.presentPlacementInRoute(...)` to show Flutter UI above the paywall after CTA, keep using the route API for that placement; the route path is opt-in and is not the warmed provider-overlay slot.
+
+### Step 8: Present The Paywall At The Upgrade Moment
 
 Call `presentPlacement()` where the app normally starts an upgrade flow.
 
@@ -154,7 +171,7 @@ if (!result.shown) {
 }
 ```
 
-### Step 8: Fallback To The Existing App Paywall
+### Step 9: Fallback To The Existing App Paywall
 
 Always wire `onFallback` to the app's current paywall. That keeps monetization available if Tranzmit config is still loading, the placement is missing or disabled, or the WebView renderer reports an error.
 
@@ -179,7 +196,7 @@ Fallback reasons:
 2. `FallbackReason.placementNotFound`: the trigger has no enabled placement in config.
 3. `FallbackReason.renderError`: the hosted document or WebView failed after showing began.
 
-### Step 9: Keep Billing In The Host App
+### Step 10: Keep Billing In The Host App
 
 When the paywall CTA is tapped:
 
@@ -281,7 +298,7 @@ result = Tranzmit.presentPlacementInRoute(
 
 Only apps that call `presentPlacementInRoute` use the Navigator route path. The default `presentPlacement` API is unchanged and remains the recommended default when no post-CTA Flutter UI needs to appear above the paywall.
 
-### Step 10: Verify The Integration
+### Step 11: Verify The Integration
 
 Run this QA checklist before shipping:
 
@@ -290,14 +307,15 @@ Run this QA checklist before shipping:
 3. Confirm `Tranzmit.of(context).getPlacement('upgrade_pro')` returns a placement.
 4. Confirm the dashboard paywall variant has the right **Billing Product ID**.
 5. Temporarily use a missing trigger and confirm `onFallback` opens the existing app paywall.
-6. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders.
-7. Tap the CTA and confirm the host purchase flow starts for the matching billing product.
-8. Complete a test purchase and confirm `reportConversion()` runs.
-9. Change paywall copy, product ID, or variants in the Tranzmit dashboard.
-10. Call `await Tranzmit.of(context).refreshConfig()`.
-11. Present the paywall again and confirm the dashboard change appears.
+6. Call `await Tranzmit.of(context).preloadPlacement('upgrade_pro')` and confirm the result status becomes `ready`.
+7. Call `presentPlacement('upgrade_pro')` and confirm the remote paywall renders without a blank cold WebView moment.
+8. Tap the CTA and confirm the host purchase flow starts for the matching billing product.
+9. Complete a test purchase and confirm `reportConversion()` runs.
+10. Change paywall copy, product ID, or variants in the Tranzmit dashboard.
+11. Call `await Tranzmit.of(context).refreshConfig()`.
+12. Preload and present the paywall again, then confirm the dashboard change appears.
 
-### Step 11: AI Agent Acceptance Criteria
+### Step 12: AI Agent Acceptance Criteria
 
 If Claude, Codex, Cursor, or another coding agent implements this SDK, the task is done only when:
 
@@ -307,12 +325,13 @@ If Claude, Codex, Cursor, or another coding agent implements this SDK, the task 
 4. The provided `publicKey` is passed to `TranzmitConfig`.
 5. Logged-in users pass a real `userId`; logged-out users do not pass a fake ID.
 6. Each dashboard paywall variant has a **Billing Product ID** matching the host app's billing provider.
-7. The app calls `presentPlacement()` with the dashboard trigger.
-8. `onCTA` starts native billing with `product.id`.
-9. `onFallback` opens the app's existing paywall.
-10. `reportConversion()` is called only after billing succeeds.
-11. No hardcoded paywall UI is added to the host app.
-12. The integration has a manual QA path that proves the remote paywall renders, opens the right billing product, and falls back safely.
+7. The app calls `preloadPlacement()` after SDK readiness when it can anticipate the upgrade moment.
+8. The app calls `presentPlacement()` with the dashboard trigger.
+9. `onCTA` starts native billing with `product.id`.
+10. `onFallback` opens the app's existing paywall.
+11. `reportConversion()` is called only after billing succeeds.
+12. No hardcoded paywall UI is added to the host app.
+13. The integration has a manual QA path that proves preloading reaches `ready`, the remote paywall renders, the right billing product opens, and fallback remains safe.
 
 ## Install
 
@@ -411,6 +430,21 @@ The SDK persists `stableID` in `SharedPreferences` per Tranzmit public key. It r
 
 Use the trigger configured in the Tranzmit dashboard. The default trigger used by the demo client is `upgrade_pro`.
 
+To reduce the blank loading moment on hosted paywalls, preload the placement after SDK readiness and before the user taps the upgrade entry point:
+
+```dart
+final tranzmit = Tranzmit.of(context);
+
+if (tranzmit.isReady) {
+  final preload = await tranzmit.preloadPlacement('upgrade_pro');
+  if (!preload.ready) {
+    debugPrint('Tranzmit preload failed: ${preload.error}');
+  }
+}
+```
+
+`preloadPlacement()` returns a `PreloadResult` with `status` values of `loading`, `ready`, or `failed`. It is safe to present even if preload is still loading or failed; `presentPlacement()` falls back to the normal renderer path and the existing loading view.
+
 ```dart
 final tranzmit = Tranzmit.of(context);
 
@@ -484,6 +518,8 @@ CTA taps are callbacks, not redirects. Hosted paywall documents should call `win
 
 If `onCTA` opens Flutter UI that must appear above the paywall, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement. This includes terms and conditions popups, payment bottom sheets, error dialogs, snackbars, and pushed checkout screens. Otherwise, keep using the default `Tranzmit.of(context).presentPlacement(...)`.
 
+Preloaded warm slots are reused by the default provider-overlay `presentPlacement()` path. The route API is for special layering cases and should only be used when the app needs Flutter UI above the paywall while it is still visible.
+
 ## Refresh During QA
 
 Dashboard changes are fetched automatically through the server TTL cache. During QA, after saving a paywall or experiment change in the dashboard, force refresh:
@@ -516,6 +552,8 @@ On init, the SDK calls:
 
 Config is cached locally. The SDK can render a previously cached config while a fresh network request runs in the background.
 
+`preloadPlacement(trigger)` does not make a new config request by itself. It uses the already hydrated placement spec, warms a hidden WebView, and waits for the hosted document to finish loading or post a `ready` bridge event. If identity, config, variant, revision, or presentation mode changes, the SDK discards stale warm slots and reloads them on the next preload request.
+
 ## Troubleshooting Checklist
 
 If a paywall does not show:
@@ -528,6 +566,13 @@ If a paywall does not show:
 6. Check `onError` logs for `config_fetch_failed`, `paywall_document_fetch_failed`, or HTTP status codes.
 7. Call `await Tranzmit.of(context).refreshConfig()` after dashboard edits.
 8. Confirm the device can reach the Tranzmit API and hosted document URLs.
+
+If the paywall shows a blank/loading state for too long:
+
+1. Confirm the app calls `preloadPlacement('upgrade_pro')` only after `Tranzmit.of(context).isReady` is true.
+2. Confirm the preload result reaches `PreloadStatus.ready` before the user taps the upgrade button.
+3. Confirm the app presents with `Tranzmit.of(context).presentPlacement(...)`, not `Tranzmit.presentPlacementInRoute(...)`, unless the route layering behavior is required.
+4. Refresh config after dashboard edits, then call `preloadPlacement()` again so stale warm slots are replaced.
 
 If the CTA opens the wrong plan:
 
@@ -562,10 +607,26 @@ For Claude, Codex, or another coding agent integrating this SDK into a customer 
 5. Pass the Tranzmit public key supplied by the Tranzmit team.
 6. Confirm each dashboard variant has the correct **Billing Product ID**.
 7. Pass `userId` when available; omit it when logged out.
-8. Use `presentPlacement('upgrade_pro')` at the upgrade or monetization moment.
-9. Wire `onCTA` to the app's existing billing provider using `product.id`.
-10. Call `reportConversion()` only after billing succeeds.
-11. Do not hardcode paywall UI or billing product selection. Tranzmit dashboard controls design, copy, products, placement status, and experiment variants.
+8. Call `preloadPlacement('upgrade_pro')` after SDK readiness when the app can anticipate the upgrade flow.
+9. Use `presentPlacement('upgrade_pro')` at the upgrade or monetization moment.
+10. Wire `onCTA` to the app's existing billing provider using `product.id`.
+11. Call `reportConversion()` only after billing succeeds.
+12. Do not hardcode paywall UI or billing product selection. Tranzmit dashboard controls design, copy, products, placement status, and experiment variants.
+
+## QA Testing Agent
+
+The SDK includes an automated QA tool that validates integrations end-to-end:
+
+```bash
+dart run tool/qa_agent.dart \
+  --app-path=example \
+  --public-key=pk_test_2a8a5f07d4b9fcf1cc77e024 \
+  --trigger=upgrade_pro \
+  --expected-product=pro_monthly \
+  --platform=ios
+```
+
+It boots the app on an emulator, intercepts HTTP traffic via a local proxy, runs the full AGENTS.md verification checklist (12 checks), and outputs a pass/fail report with metrics. See `tool/qa_agent.dart --help` for all options.
 
 ## Supported Layouts
 

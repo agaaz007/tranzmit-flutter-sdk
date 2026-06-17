@@ -78,6 +78,41 @@ void main() {
     expect(third.identifiers['stableID'], isNot(first.identifiers['stableID']));
   });
 
+  test('resolveIdentity preserves userId', () async {
+    final identity = await resolveIdentity(
+      publicKey: 'pk_test_user',
+      userId: 'user_123',
+      storage: MemoryTranzmitStorage(),
+    );
+
+    expect(identity.userId, 'user_123');
+    expect(identity.toJson()['userId'], 'user_123');
+  });
+
+  test('later init wins when init is called twice with different identity',
+      () async {
+    final client = TranzmitClient(
+      storage: MemoryTranzmitStorage(),
+      httpClient: RecordingHttpClient(),
+    );
+
+    await client.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    await client.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+        userId: 'user_456',
+      ),
+    );
+
+    expect(client.identity?.userId, 'user_456');
+  });
+
   test('parses paywall specs and placement config', () {
     final response = ConfigResponse.fromJson(
       jsonDecode(jsonEncode(_mockConfig)) as JsonMap,
@@ -190,6 +225,82 @@ void main() {
     expect(fallback?.error, isA<StateError>());
   });
 
+  test('preloads placement without sending an impression', () async {
+    final httpClient = RecordingHttpClient();
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: httpClient,
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    await controller.flush();
+    httpClient.requests.clear();
+
+    final preloadFuture = controller.preloadPlacement('upgrade_pro');
+    final preload = controller.preloadedPaywalls.single;
+    expect(preload.status, PreloadStatus.loading);
+
+    await controller.flush();
+    expect(httpClient.requests, isEmpty);
+
+    controller.markPreloadReady(preload.trigger, preload.key);
+    final preloadResult = await preloadFuture;
+    expect(preloadResult.ready, isTrue);
+    expect(controller.preloadedPaywalls.single.status, PreloadStatus.ready);
+
+    await controller.flush();
+    expect(httpClient.requests, isEmpty);
+
+    final result = controller.presentPlacement('upgrade_pro');
+    expect(result.shown, isTrue);
+
+    await controller.flush();
+    expect(httpClient.requests, hasLength(1));
+    final body =
+        jsonDecode(httpClient.requests.single.body) as Map<String, dynamic>;
+    final events = body['events'] as List<dynamic>;
+    expect(events.single['event'], 'impression');
+  });
+
+  test('refresh invalidates preloaded placements', () async {
+    final httpClient = RecordingHttpClient();
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: httpClient,
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+
+    final preloadFuture = controller.preloadPlacement('upgrade_pro');
+    final preload = controller.preloadedPaywalls.single;
+    controller.markPreloadReady(preload.trigger, preload.key);
+    expect((await preloadFuture).ready, isTrue);
+
+    final nextConfig = jsonDecode(jsonEncode(_mockConfig)) as JsonMap;
+    final placement =
+        nextConfig['placements']['upgrade_pro'] as Map<String, dynamic>;
+    final spec = placement['spec'] as Map<String, dynamic>;
+    spec['revision'] = 'test-2';
+    spec['cacheKey'] = 'test_paywall:test-2';
+    httpClient.configResponse = nextConfig;
+
+    await controller.refreshConfig();
+
+    expect(controller.preloadedPaywalls, isEmpty);
+  });
+
   test('hydrates hosted WebView documents before caching config', () async {
     final httpClient = RecordingHttpClient(hostedDocumentMode: true);
     final client = TranzmitClient(
@@ -291,9 +402,10 @@ class RecordedRequest {
 }
 
 class RecordingHttpClient extends http.BaseClient {
-  RecordingHttpClient({this.hostedDocumentMode = false});
+  RecordingHttpClient({this.hostedDocumentMode = false, this.configResponse});
 
   final bool hostedDocumentMode;
+  Map<String, Object?>? configResponse;
   final List<RecordedRequest> requests = <RecordedRequest>[];
 
   @override
@@ -302,7 +414,10 @@ class RecordingHttpClient extends http.BaseClient {
     requests.add(RecordedRequest(url: request.url, body: body));
 
     final responseBody = request.url.path.endsWith('/v1/config')
-        ? jsonEncode(hostedDocumentMode ? _hostedConfig() : _mockConfig)
+        ? jsonEncode(
+            configResponse ??
+                (hostedDocumentMode ? _hostedConfig() : _mockConfig),
+          )
         : request.url.path.contains('/v1/paywall-documents/')
             ? jsonEncode({
                 'html': '<main><h1>Hosted Upgrade</h1></main>',

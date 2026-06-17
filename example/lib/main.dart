@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:tranzmit_flutter/tranzmit_flutter.dart';
 
@@ -12,6 +14,10 @@ const _publicKey = String.fromEnvironment(
 const _demoTrigger = String.fromEnvironment(
   'TRANZMIT_TRIGGER',
   defaultValue: 'upgrade_pro',
+);
+const _initialUserId = String.fromEnvironment(
+  'TRANZMIT_USER_ID',
+  defaultValue: '',
 );
 
 /// QA stableIDs — different IDs usually land in different Statsig buckets.
@@ -67,12 +73,18 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
   int _probeBucket = 0;
   String? _lastError;
   String? _lastEvent;
+  String? _preloadStatus;
 
   @override
   void initState() {
     super.initState();
     _userIdController.addListener(_onIdentityFieldChanged);
     _stableIdController.addListener(_onIdentityFieldChanged);
+    final presetUserId = _initialUserId.trim();
+    if (presetUserId.isNotEmpty) {
+      _loggedOut = false;
+      _userIdController.text = presetUserId;
+    }
   }
 
   @override
@@ -82,6 +94,11 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
     if (_controller == next) return;
     _controller?.removeListener(_onControllerChanged);
     _controller = next..addListener(_onControllerChanged);
+    if (_initialUserId.trim().isNotEmpty && !_loggedOut) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_applyIdentity());
+      });
+    }
   }
 
   @override
@@ -176,6 +193,13 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
       if (stableId != null) {
         debugPrint('[Tranzmit harness] stableID: $stableId');
       }
+      final userId = controller.identity?.userId;
+      if (userId != null) {
+        debugPrint('[Tranzmit harness] userId: $userId');
+      } else if (!_loggedOut) {
+        debugPrint(
+            '[Tranzmit harness] userId: (none — logged-in mode but empty field)');
+      }
     } on TranzmitError catch (error) {
       setState(() => _lastError = '${error.code}: ${error.message}');
       _setEvent('Identity update failed: ${error.code}');
@@ -191,6 +215,43 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
     } on TranzmitError catch (error) {
       setState(() => _lastError = '${error.code}: ${error.message}');
       _setEvent('Refresh failed: ${error.code}');
+    }
+  }
+
+  Future<void> _preloadPaywall() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    setState(() => _preloadStatus = 'loading');
+    final result = await controller.preloadPlacement(_demoTrigger);
+    if (!mounted) return;
+
+    setState(() => _preloadStatus = result.status.name);
+    _setEvent('Preload ${result.status.name} for $_demoTrigger');
+  }
+
+  void _presentProviderPaywall() {
+    final controller = _controller;
+    if (controller == null) return;
+
+    late final GateResult result;
+    result = controller.presentPlacement(
+      _demoTrigger,
+      onCTA: (product) {
+        _setEvent('CTA tapped: ${product.id}');
+        result.dismiss();
+      },
+      onDismiss: () => _setEvent('Provider paywall dismissed'),
+      onFallback: (event) {
+        _setEvent('Fallback opened: ${event.reason.name}');
+        _openFallbackPaywall(event);
+      },
+      onImpression: () =>
+          _setEvent('Provider impression tracked for $_demoTrigger'),
+    );
+
+    if (!result.shown) {
+      _setEvent('Provider paywall was not shown; fallback handled it');
     }
   }
 
@@ -394,6 +455,7 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
                       value: _loggedOut,
                       onChanged: (value) {
                         setState(() => _loggedOut = value);
+                        unawaited(_applyIdentity());
                       },
                     ),
                     _StatusRow(
@@ -439,6 +501,7 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
                 _StatusRow('Document URL', document?.url ?? '—'),
                 _StatusRow('HTML hydrated', htmlLoaded ? 'yes' : 'no'),
                 _StatusRow('Integrity', document?.integrity ?? '—'),
+                _StatusRow('Preload', _preloadStatus ?? 'not requested'),
               ],
             ),
             const SizedBox(height: 16),
@@ -451,6 +514,18 @@ class _SdkHarnessScreenState extends State<SdkHarnessScreen> {
               onPressed: controller == null ? null : _presentPaywall,
               icon: const Icon(Icons.lock_open),
               label: const Text('Present "$_demoTrigger"'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: controller == null ? null : _preloadPaywall,
+              icon: const Icon(Icons.memory),
+              label: const Text('Preload "$_demoTrigger"'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: controller == null ? null : _presentProviderPaywall,
+              icon: const Icon(Icons.flash_on),
+              label: const Text('Present warmed "$_demoTrigger"'),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
