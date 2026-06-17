@@ -434,11 +434,12 @@ String _composeDocument(
   PaywallViewport? viewport,
 }) {
   final document = spec.document;
-  final html = document?.html;
-  if (document == null || html == null || html.isEmpty) {
+  final rawHtml = document?.html;
+  if (document == null || rawHtml == null || rawHtml.isEmpty) {
     return '''<!doctype html><html><body></body></html>''';
   }
 
+  final hostedDocument = _HostedDocumentParts.fromHtml(rawHtml);
   final ctaTextJson = jsonEncode(spec.cta.text);
 
   final bootstrap = '''
@@ -458,8 +459,25 @@ String _composeDocument(
       node.getAttribute('data-billing-product-id') ||
       undefined;
   }
+  function looksLikeDismiss(node){
+    if (!node || !node.getAttribute) return false;
+    var action = node.getAttribute('data-tranzmit-action');
+    if (action === 'dismiss' || action === 'close') return true;
+    var tag = (node.tagName || '').toLowerCase();
+    if (tag !== 'a' && tag !== 'button' && node.getAttribute('role') !== 'button') {
+      return false;
+    }
+    if (node.getAttribute('aria-label') === 'Close') return true;
+    var marker = [
+      node.getAttribute('class'),
+      node.getAttribute('id'),
+      node.getAttribute('data-testid')
+    ].filter(Boolean).join(' ');
+    return /(^|[\\s_-])(close-btn|tz-close|close-button|paywall-close)([\\s_-]|\$)/i.test(marker);
+  }
   function looksLikeCta(node){
     if (!node || !node.getAttribute) return false;
+    if (looksLikeDismiss(node)) return false;
     if (productIdFor(node)) return true;
     var tag = (node.tagName || '').toLowerCase();
     if (tag !== 'a' && tag !== 'button' && node.getAttribute('role') !== 'button') {
@@ -496,6 +514,11 @@ String _composeDocument(
         });
         return;
       }
+      if (looksLikeDismiss(node)) {
+        event.preventDefault();
+        post({ type: 'dismiss' });
+        return;
+      }
       if (looksLikeCta(node)) {
         event.preventDefault();
         post({
@@ -516,6 +539,9 @@ String _composeDocument(
   final presentationClass = 'tz-presentation-${presentation.name}';
   final resolvedViewport = viewport ?? PaywallViewport.fallback(presentation);
   final viewportJson = jsonEncode(resolvedViewport.toJson());
+  final bodyClass = hostedDocument.bodyClass == null
+      ? presentationClass
+      : '$presentationClass ${hostedDocument.bodyClass}';
 
   return '''<!doctype html>
 <html class="$presentationClass" data-tranzmit-presentation="${presentation.name}">
@@ -573,6 +599,19 @@ ${document.css ?? ''}
   .tz-presentation-fullscreen .tz-paywall:not(.phone) .close,
   .tz-presentation-fullscreen .tranzmit-paywall .close {
     display: none !important;
+  }
+  .tz-presentation-fullscreen .influish_annual_pro .tz-close {
+    display: block !important;
+    width: 22px !important;
+    height: 22px !important;
+    line-height: 22px !important;
+    font-size: 22px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    color: #5f5a6b !important;
+    left: clamp(14px, 4vw, 22px) !important;
+    top: clamp(14px, 4vw, 22px) !important;
   }
   @media (max-height: 880px) {
     .tz-presentation-fullscreen .influish_intro_offer {
@@ -653,14 +692,70 @@ ${document.css ?? ''}
   .tranzmit-paywall button,
   .tranzmit-paywall a { overflow-wrap: anywhere; }
 </style>
+${hostedDocument.head}
 </head>
-<body class="$presentationClass">
-$html
-${document.js == null ? '' : '<script>${document.js}</script>'}
+<body class="$bodyClass">
 <script>window.TranzmitNativeViewport = $viewportJson;</script>
 $bootstrap
+${hostedDocument.body}
+${document.js == null ? '' : '<script>${document.js}</script>'}
 </body>
 </html>''';
+}
+
+class _HostedDocumentParts {
+  const _HostedDocumentParts({
+    required this.head,
+    required this.body,
+    required this.bodyClass,
+  });
+
+  final String head;
+  final String body;
+  final String? bodyClass;
+
+  static final RegExp _headPattern = RegExp(
+    r'<head\b[^>]*>([\s\S]*?)<\/head>',
+    caseSensitive: false,
+  );
+  static final RegExp _bodyPattern = RegExp(
+    r'<body\b([^>]*)>([\s\S]*?)<\/body>',
+    caseSensitive: false,
+  );
+  static final RegExp _classPattern = RegExp(
+    r'''\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
+    caseSensitive: false,
+  );
+
+  factory _HostedDocumentParts.fromHtml(String html) {
+    final headMatch = _headPattern.firstMatch(html);
+    final bodyMatch = _bodyPattern.firstMatch(html);
+    if (headMatch == null && bodyMatch == null) {
+      return _HostedDocumentParts(head: '', body: html, bodyClass: null);
+    }
+
+    return _HostedDocumentParts(
+      head: headMatch?.group(1)?.trim() ?? '',
+      body: bodyMatch?.group(2)?.trim() ?? _stripDocumentShell(html),
+      bodyClass: _extractClass(bodyMatch?.group(1)),
+    );
+  }
+
+  static String _stripDocumentShell(String html) {
+    return html
+        .replaceAll(RegExp(r'<!doctype[^>]*>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<\/?html\b[^>]*>', caseSensitive: false), '')
+        .replaceAll(_headPattern, '')
+        .trim();
+  }
+
+  static String? _extractClass(String? attributes) {
+    if (attributes == null || attributes.isEmpty) return null;
+    final match = _classPattern.firstMatch(attributes);
+    final value = match?.group(1) ?? match?.group(2) ?? match?.group(3);
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 class _MissingDocumentView extends StatelessWidget {

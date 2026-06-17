@@ -295,13 +295,16 @@ class _PresentedSpec extends StatelessWidget {
                   onError: onError,
                 ),
               ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child:
-                      _FullscreenCloseButton(spec: spec, onDismiss: onDismiss),
+              if (!_paywallProvidesHostedDismissControl(spec))
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: _FullscreenCloseButton(
+                      spec: spec,
+                      onDismiss: onDismiss,
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -368,6 +371,19 @@ class _PresentedSpec extends StatelessWidget {
   }
 }
 
+/// Hosted Influish paywalls ship their own dismiss control (`close-btn` or
+/// `tz-close`). The intro-offer variant hides its HTML close in fullscreen and
+/// keeps a minimal SDK close on the top-right.
+bool _paywallProvidesHostedDismissControl(PaywallSpec spec) {
+  final templateId = spec.templateId;
+  if (templateId == null) return false;
+  if (templateId == 'influish_intro_offer') return false;
+  if (templateId == 'original_paywall' || templateId == 'influish_annual_pro') {
+    return true;
+  }
+  return templateId.startsWith('influish_');
+}
+
 class _FullscreenCloseButton extends StatelessWidget {
   const _FullscreenCloseButton({required this.spec, required this.onDismiss});
 
@@ -380,18 +396,18 @@ class _FullscreenCloseButton extends StatelessWidget {
     return Align(
       alignment: alignRight ? Alignment.topRight : Alignment.topLeft,
       child: Material(
-        color: alignRight
-            ? Colors.transparent
-            : Colors.white.withValues(alpha: 0.92),
-        shape: const CircleBorder(),
-        elevation: alignRight ? 0 : 2,
+        color: Colors.transparent,
+        elevation: 0,
         child: InkWell(
-          customBorder: const CircleBorder(),
           onTap: onDismiss,
-          child: const SizedBox(
-            width: 48,
-            height: 48,
-            child: Icon(Icons.close, color: Color(0xFF6F6878), size: 24),
+          child: SizedBox(
+            width: alignRight ? 40 : 48,
+            height: alignRight ? 40 : 48,
+            child: Icon(
+              Icons.close,
+              color: const Color(0xFF6F6878),
+              size: alignRight ? 28 : 24,
+            ),
           ),
         ),
       ),

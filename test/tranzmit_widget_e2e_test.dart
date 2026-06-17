@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tranzmit_flutter/src/controller.dart';
@@ -87,6 +88,89 @@ void main() {
             "event.preventDefault();\n        post({\n          type: 'cta'"));
   });
 
+  test('bridges hosted close buttons without data-tranzmit-action', () {
+    final specJson = Map<String, dynamic>.from(_baseSpec);
+    specJson['templateId'] = 'influish_paywall_2';
+    specJson['document'] = {
+      'html':
+          '<main><button class="close-btn" type="button" aria-label="Close"></button></main>',
+    };
+    final spec = PaywallSpec.fromJson(specJson);
+    final html = composePaywallDocumentForTest(spec);
+
+    expect(html, contains('function looksLikeDismiss(node)'));
+    expect(html, contains("post({ type: 'dismiss' });"));
+  });
+
+  test('composes Influish production full HTML documents with dependencies',
+      () {
+    final paywalls = [
+      (
+        path: 'paywalls/influish/paywall1.html',
+        title: 'Influish Paywall 1',
+        cta: 'Start Growing Now',
+        dependency: 'images.unsplash.com/photo-1766749365634',
+        script: 'function makeCarousel',
+      ),
+      (
+        path: 'paywalls/influish/paywall2.html',
+        title: 'Influish Paywall 2',
+        cta: 'Unlock AutoDM Pro',
+        dependency: 'data:image/png;base64',
+        script: null,
+      ),
+    ];
+
+    for (final paywall in paywalls) {
+      final specJson = Map<String, dynamic>.from(_baseSpec);
+      specJson['templateId'] = paywall.path
+          .replaceAll('paywalls/influish/', 'influish_')
+          .replaceAll('.html', '');
+      specJson['document'] = {
+        'html': File(paywall.path).readAsStringSync(),
+      };
+      specJson['cta'] = paywall.cta;
+
+      final spec = PaywallSpec.fromJson(specJson);
+      final html = composePaywallDocumentForTest(
+        spec,
+        presentation: PresentationMode.fullscreen,
+      );
+
+      expect(_tagCount(html, 'html'), 1);
+      expect(_tagCount(html, 'head'), 1);
+      expect(_tagCount(html, 'body'), 1);
+      expect(_doctypeCount(html), 1);
+      expect(html, contains(paywall.title));
+      expect(html, contains('fonts.googleapis.com'));
+      expect(html, contains(paywall.dependency));
+      expect(html, contains(paywall.cta));
+      if (paywall.script case final script?) {
+        expect(html, contains(script));
+      }
+      if (paywall.path.endsWith('paywall1.html')) {
+        expect(html, contains('--influish-vw'));
+        expect(html, contains('--fc-phone-scale'));
+        expect(html, contains('feature-card-phone'));
+        expect(html, contains('display:flex'));
+        expect(html, contains('function itemMetrics'));
+      }
+      if (paywall.path.endsWith('paywall2.html')) {
+        expect(html, contains('--influish-vw'));
+        expect(html, contains('.iphone::before'));
+        expect(html, contains('.status,\n  .home-bar'));
+      }
+      expect(html, contains('function looksLikeCta(node)'));
+      expect(html, contains('window.TranzmitNativeViewport'));
+      final bridgeIndex = html.indexOf('window.Tranzmit =');
+      expect(bridgeIndex, isNonNegative);
+      expect(
+        bridgeIndex,
+        lessThan(html.lastIndexOf('</body>')),
+      );
+    }
+  });
+
   test('allows iOS initial document navigation to the configured base URL', () {
     expect(
       isInitialDocumentNavigation(
@@ -169,4 +253,12 @@ void main() {
         contains(
             '.phone{width:412px;height:920px;border-radius:54px;box-shadow:0 0 0 11px #0c0815}'));
   });
+}
+
+int _tagCount(String html, String tagName) {
+  return RegExp('<$tagName\\b', caseSensitive: false).allMatches(html).length;
+}
+
+int _doctypeCount(String html) {
+  return RegExp(r'<!doctype\b', caseSensitive: false).allMatches(html).length;
 }
