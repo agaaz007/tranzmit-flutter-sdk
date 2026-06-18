@@ -102,6 +102,25 @@ void main() {
     expect(html, contains("post({ type: 'dismiss' });"));
   });
 
+  test('does not treat product metadata alone as a CTA', () {
+    final specJson = Map<String, dynamic>.from(_baseSpec);
+    specJson['document'] = {
+      'html': '''
+        <main data-product-id="pro_monthly">
+          <button class="tier-tab" type="button">Pro</button>
+          <button class="cta" type="button">Start Free Trial</button>
+        </main>
+      ''',
+    };
+
+    final spec = PaywallSpec.fromJson(specJson);
+    final html = composePaywallDocumentForTest(spec);
+
+    expect(html, contains('function isInteractiveElement(node)'));
+    expect(html, isNot(contains('if (productIdFor(node)) return true;')));
+    expect(html, contains('if (isInteractiveElement(node)) return;'));
+  });
+
   test('composes Influish production full HTML documents with dependencies',
       () {
     final paywalls = [

@@ -495,6 +495,11 @@ String _composeDocument(
       node.getAttribute('data-billing-product-id') ||
       undefined;
   }
+  function isInteractiveElement(node){
+    if (!node || !node.getAttribute) return false;
+    var tag = (node.tagName || '').toLowerCase();
+    return tag === 'a' || tag === 'button' || node.getAttribute('role') === 'button';
+  }
   function looksLikeDismiss(node){
     if (!node || !node.getAttribute) return false;
     var action = node.getAttribute('data-tranzmit-action');
@@ -514,11 +519,6 @@ String _composeDocument(
   function looksLikeCta(node){
     if (!node || !node.getAttribute) return false;
     if (looksLikeDismiss(node)) return false;
-    if (productIdFor(node)) return true;
-    var tag = (node.tagName || '').toLowerCase();
-    if (tag !== 'a' && tag !== 'button' && node.getAttribute('role') !== 'button') {
-      return false;
-    }
     var marker = [
       node.getAttribute('class'),
       node.getAttribute('id'),
@@ -527,6 +527,7 @@ String _composeDocument(
     if (/(^|[\\s_-])(cta|primary-cta|checkout|purchase|subscribe|upgrade|continue)([\\s_-]|\$)/i.test(marker)) {
       return true;
     }
+    if (!isInteractiveElement(node)) return false;
     return configuredCtaText && normalizeText(node.textContent) === normalizeText(configuredCtaText);
   }
   window.Tranzmit = {
@@ -564,6 +565,7 @@ String _composeDocument(
         });
         return;
       }
+      if (isInteractiveElement(node)) return;
       node = node.parentNode;
     }
   }, true);
