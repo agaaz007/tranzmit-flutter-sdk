@@ -202,6 +202,29 @@ class TranzmitController extends ChangeNotifier {
     return completer.future;
   }
 
+  PreloadedPaywall? claimReadyPreloadForRoute(
+    String trigger,
+    PlacementConfig placement,
+    PresentationMode presentation,
+  ) {
+    _dropStalePreload(trigger, placement, presentation);
+
+    final preload = _preloadedPaywalls[trigger];
+    if (preload == null) return null;
+
+    if (preload.status == PreloadStatus.failed) {
+      _preloadedPaywalls.remove(trigger);
+      _notifyIfAlive();
+      return null;
+    }
+
+    if (preload.status != PreloadStatus.ready) return null;
+
+    _preloadedPaywalls.remove(trigger);
+    _notifyIfAlive();
+    return preload;
+  }
+
   GateResult gate(String trigger, [GateOptions options = const GateOptions()]) {
     if (!_client.isReady) {
       options.onFallback?.call(

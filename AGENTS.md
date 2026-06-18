@@ -103,9 +103,9 @@ if (tranzmit.isReady) {
 
 `preloadPlacement()` mounts a hidden but attached WebView in `TranzmitProvider`, loads the hosted document, and completes when the WebView finishes loading or the document posts a `ready` bridge event.
 
-Preloading does not send an impression, does not report conversion, and does not show UI. The impression fires only when the host app later calls `presentPlacement()`.
+Preloading does not send an impression, does not report conversion, and does not show UI. The impression fires only when the host app later presents the placement.
 
-Use preloading with the default `Tranzmit.of(context).presentPlacement(...)` provider-overlay path. `Tranzmit.presentPlacementInRoute(...)` is still available for post-CTA Flutter UI layering, but that route path is opt-in and does not reuse the warmed provider slot.
+Both the default `Tranzmit.of(context).presentPlacement(...)` provider-overlay path and `Tranzmit.presentPlacementInRoute(...)` can reuse a ready preload slot. Keep `presentPlacementInRoute(...)` opt-in for post-CTA Flutter UI layering, such as checkout modals, bottom sheets, dialogs, snackbars, or pushed checkout screens above the paywall.
 
 ### Step 7: Present The Placement
 
@@ -455,8 +455,10 @@ if (!result.shown) {
 If `onCTA` must open Flutter UI above the paywall, such as a terms and
 conditions popup, payment bottom sheet, error dialog, snackbar, or checkout
 screen, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement
-instead of the default `Tranzmit.of(context).presentPlacement(...)`. Do not use
-the route API unless the host app needs that layering behavior.
+instead of the default `Tranzmit.of(context).presentPlacement(...)`. A ready
+`preloadPlacement()` slot is reused by this route path too, so these flows can
+avoid a cold WebView spinner. Do not use the route API unless the host app needs
+that layering behavior.
 
 ## Native Billing
 

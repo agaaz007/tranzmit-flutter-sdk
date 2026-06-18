@@ -131,9 +131,9 @@ if (tranzmit.isReady) {
 }
 ```
 
-Preloading does not send an impression and does not show UI. The impression event fires only when the app later calls `presentPlacement()` and the paywall is revealed.
+Preloading does not send an impression and does not show UI. The impression event fires only when the app later presents the paywall.
 
-Use preloading with the default `Tranzmit.of(context).presentPlacement(...)` path. If the app must use `Tranzmit.presentPlacementInRoute(...)` to show Flutter UI above the paywall after CTA, keep using the route API for that placement; the route path is opt-in and is not the warmed provider-overlay slot.
+Both `Tranzmit.of(context).presentPlacement(...)` and `Tranzmit.presentPlacementInRoute(context, ...)` reuse a ready preload slot when one exists. Use the route API only when the app must show Flutter UI above the paywall after CTA, such as a checkout modal, terms dialog, snackbar, or pushed checkout screen.
 
 ### Step 8: Present The Paywall At The Upgrade Moment
 
@@ -518,7 +518,7 @@ CTA taps are callbacks, not redirects. Hosted paywall documents should call `win
 
 If `onCTA` opens Flutter UI that must appear above the paywall, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement. This includes terms and conditions popups, payment bottom sheets, error dialogs, snackbars, and pushed checkout screens. Otherwise, keep using the default `Tranzmit.of(context).presentPlacement(...)`.
 
-Preloaded warm slots are reused by the default provider-overlay `presentPlacement()` path. The route API is for special layering cases and should only be used when the app needs Flutter UI above the paywall while it is still visible.
+Preloaded warm slots are reused by both the default provider-overlay `presentPlacement()` path and the Navigator route `presentPlacementInRoute()` path. The route API is still for special layering cases and should only be used when the app needs Flutter UI above the paywall while it is still visible.
 
 ## Refresh During QA
 

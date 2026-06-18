@@ -4,6 +4,7 @@
 
 - Added `preloadPlacement()` to warm hosted WebView paywalls before presentation.
 - Added hidden provider-overlay warm slots so `presentPlacement()` can reuse a ready hosted paywall without a cold blank loading moment.
+- Added route warm-slot reuse so `presentPlacementInRoute()` can avoid a cold WebView spinner for checkout-modal flows.
 - Added preload verification docs, example harness controls, and QA tooling.
 
 ## 0.1.0

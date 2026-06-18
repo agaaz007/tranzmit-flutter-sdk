@@ -268,6 +268,43 @@ void main() {
     expect(events.single['event'], 'impression');
   });
 
+  test('route presentations claim ready preloads without sending an impression',
+      () async {
+    final httpClient = RecordingHttpClient();
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: httpClient,
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    await controller.flush();
+    httpClient.requests.clear();
+
+    final preloadFuture = controller.preloadPlacement('upgrade_pro');
+    final preload = controller.preloadedPaywalls.single;
+    controller.markPreloadReady(preload.trigger, preload.key);
+    expect((await preloadFuture).ready, isTrue);
+
+    final placement = controller.getPlacement('upgrade_pro')!;
+    final claimed = controller.claimReadyPreloadForRoute(
+      'upgrade_pro',
+      placement,
+      PresentationMode.sheet,
+    );
+
+    expect(claimed, same(preload));
+    expect(controller.preloadedPaywalls, isEmpty);
+
+    await controller.flush();
+    expect(httpClient.requests, isEmpty);
+  });
+
   test('refresh invalidates preloaded placements', () async {
     final httpClient = RecordingHttpClient();
     final controller = TranzmitController(

@@ -34,6 +34,13 @@ GateResult presentPaywallRoute({
   }
 
   final navigator = Navigator.of(context);
+  final resolvedPresentation =
+      presentation ?? _presentationFromSpec(placement.spec);
+  final claimedPreload = controller.claimReadyPreloadForRoute(
+    trigger,
+    placement,
+    resolvedPresentation,
+  );
   final shownAt = DateTime.now();
   var completed = false;
   var renderFailed = false;
@@ -57,43 +64,59 @@ GateResult presentPaywallRoute({
     onDismiss?.call();
   }
 
+  void handleCTA(ProductSpec product) {
+    controller.track('cta_click', {
+      ...attribution(trigger, placement),
+      'productId': product.id,
+    });
+    onCTA?.call(product);
+  }
+
+  void handleError(Object error) {
+    renderFailed = true;
+    controller.track('paywall_error', {
+      ...attribution(trigger, placement),
+      'reason': 'render_error',
+      'message': error.toString(),
+    });
+    onFallback?.call(
+      FallbackEvent(
+        trigger: trigger,
+        reason: FallbackReason.renderError,
+        error: error,
+        placement: placement,
+        variantId: placement.variantId,
+      ),
+    );
+    removeRoute();
+  }
+
   route = PageRouteBuilder<void>(
     opaque: false,
     barrierColor: Colors.transparent,
     pageBuilder: (routeContext, animation, secondaryAnimation) {
+      final preload = claimedPreload;
       return Stack(
         fit: StackFit.expand,
         children: [
-          _PresentedSpec(
-            spec: placement.spec,
-            presentation: presentation ?? _presentationFromSpec(placement.spec),
-            onCTA: (product) {
-              controller.track('cta_click', {
-                ...attribution(trigger, placement),
-                'productId': product.id,
-              });
-              onCTA?.call(product);
-            },
-            onDismiss: removeRoute,
-            onError: (error) {
-              renderFailed = true;
-              controller.track('paywall_error', {
-                ...attribution(trigger, placement),
-                'reason': 'render_error',
-                'message': error.toString(),
-              });
-              onFallback?.call(
-                FallbackEvent(
-                  trigger: trigger,
-                  reason: FallbackReason.renderError,
-                  error: error,
-                  placement: placement,
-                  variantId: placement.variantId,
-                ),
-              );
-              removeRoute();
-            },
-          ),
+          if (preload == null)
+            _PresentedSpec(
+              spec: placement.spec,
+              presentation: resolvedPresentation,
+              onCTA: handleCTA,
+              onDismiss: removeRoute,
+              onError: handleError,
+            )
+          else
+            _WarmPaywallSlot(
+              preload: preload,
+              visible: true,
+              onCTA: handleCTA,
+              onDismiss: removeRoute,
+              onError: handleError,
+              onReady: () =>
+                  controller.markPreloadReady(preload.trigger, preload.key),
+            ),
         ],
       );
     },
@@ -142,16 +165,36 @@ class TranzmitPaywallHost extends StatelessWidget {
               if (!activeByTrigger.containsKey(preload.trigger))
                 _WarmPaywallSlot(
                   preload: preload,
-                  active: null,
-                  controller: controller,
+                  visible: false,
+                  onCTA: (_) {},
+                  onDismiss: () {},
+                  onError: (error) => controller.markPreloadFailed(
+                    preload.trigger,
+                    preload.key,
+                    error,
+                  ),
+                  onReady: () => controller.markPreloadReady(
+                    preload.trigger,
+                    preload.key,
+                  ),
                 ),
             for (final preload in preloadedPaywalls)
               if (activeByTrigger.containsKey(preload.trigger))
-                _WarmPaywallSlot(
-                  preload: preload,
-                  active: activeByTrigger[preload.trigger],
-                  controller: controller,
-                ),
+                Builder(builder: (context) {
+                  final active = activeByTrigger[preload.trigger]!;
+                  return _WarmPaywallSlot(
+                    preload: preload,
+                    visible: true,
+                    onCTA: (product) => controller.handleCTA(active, product),
+                    onDismiss: () => controller.dismissPaywall(active.id),
+                    onError: (error) =>
+                        controller.handlePaywallError(active, error),
+                    onReady: () => controller.markPreloadReady(
+                      preload.trigger,
+                      preload.key,
+                    ),
+                  );
+                }),
             for (final active in activePaywalls)
               if (!warmTriggers.contains(active.trigger))
                 _PresentedPaywall(
@@ -171,54 +214,48 @@ class TranzmitPaywallHost extends StatelessWidget {
 class _WarmPaywallSlot extends StatelessWidget {
   const _WarmPaywallSlot({
     required this.preload,
-    required this.active,
-    required this.controller,
+    required this.visible,
+    required this.onCTA,
+    required this.onDismiss,
+    required this.onError,
+    required this.onReady,
   });
 
   final PreloadedPaywall preload;
-  final ActivePaywall? active;
-  final TranzmitController controller;
+  final bool visible;
+  final void Function(ProductSpec product) onCTA;
+  final VoidCallback onDismiss;
+  final void Function(Object error) onError;
+  final VoidCallback onReady;
 
   @override
   Widget build(BuildContext context) {
-    final currentActive = active;
-    final isVisible = currentActive != null;
-    return KeyedSubtree(
-      key: ValueKey('tranzmit-preload:${preload.key}'),
+    final content = KeyedSubtree(
+      key: GlobalObjectKey(preload),
       child: ExcludeSemantics(
-        excluding: !isVisible,
+        excluding: !visible,
         child: IgnorePointer(
-          ignoring: !isVisible,
+          ignoring: !visible,
           child: Opacity(
-            opacity: isVisible ? 1 : 0.001,
-            child: _PresentedSpec(
+            opacity: visible ? 1 : 0.001,
+            child: _PresentedSpecBody(
               spec: preload.placement.spec,
               presentation: preload.presentation,
-              onCTA: (product) {
-                if (currentActive == null) return;
-                controller.handleCTA(currentActive, product);
-              },
-              onDismiss: () {
-                if (currentActive == null) return;
-                controller.dismissPaywall(currentActive.id);
-              },
-              onError: (error) {
-                if (currentActive == null) {
-                  controller.markPreloadFailed(
-                      preload.trigger, preload.key, error);
-                  return;
-                }
-                controller.handlePaywallError(currentActive, error);
-              },
-              onReady: () => controller.markPreloadReady(
-                preload.trigger,
-                preload.key,
-              ),
+              onCTA: onCTA,
+              onDismiss: onDismiss,
+              onError: onError,
+              onReady: onReady,
             ),
           ),
         ),
       ),
     );
+
+    if (preload.presentation == PresentationMode.inline) {
+      return content;
+    }
+
+    return Positioned.fill(child: content);
   }
 }
 
@@ -340,6 +377,39 @@ class _PresentedSpec extends StatelessWidget {
     required this.onCTA,
     required this.onDismiss,
     this.onError,
+  });
+
+  final PaywallSpec spec;
+  final PresentationMode presentation;
+  final void Function(ProductSpec product) onCTA;
+  final VoidCallback onDismiss;
+  final void Function(Object error)? onError;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = _PresentedSpecBody(
+      spec: spec,
+      presentation: presentation,
+      onCTA: onCTA,
+      onDismiss: onDismiss,
+      onError: onError,
+    );
+
+    if (presentation == PresentationMode.inline) {
+      return body;
+    }
+
+    return Positioned.fill(child: body);
+  }
+}
+
+class _PresentedSpecBody extends StatelessWidget {
+  const _PresentedSpecBody({
+    required this.spec,
+    required this.presentation,
+    required this.onCTA,
+    required this.onDismiss,
+    this.onError,
     this.onReady,
   });
 
@@ -364,12 +434,46 @@ class _PresentedSpec extends StatelessWidget {
     }
 
     if (presentation == PresentationMode.fullscreen) {
-      return Positioned.fill(
-        child: Material(
-          color: Colors.transparent,
-          child: Stack(
-            children: [
-              Positioned.fill(
+      return Material(
+        color: Colors.transparent,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: SpecRenderer(
+                spec: spec,
+                presentation: presentation,
+                onCTA: onCTA,
+                onDismiss: onDismiss,
+                onError: onError,
+                onReady: onReady,
+              ),
+            ),
+            if (!_paywallProvidesHostedDismissControl(spec))
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: _FullscreenCloseButton(
+                    spec: spec,
+                    onDismiss: onDismiss,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (presentation == PresentationMode.modal) {
+      return Container(
+        color: Colors.black.withValues(alpha: 0.45),
+        padding: const EdgeInsets.all(24),
+        child: SafeArea(
+          child: Center(
+            child: FractionallySizedBox(
+              heightFactor: 0.90,
+              widthFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
                 child: SpecRenderer(
                   spec: spec,
                   presentation: presentation,
@@ -379,74 +483,34 @@ class _PresentedSpec extends StatelessWidget {
                   onReady: onReady,
                 ),
               ),
-              if (!_paywallProvidesHostedDismissControl(spec))
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: _FullscreenCloseButton(
-                      spec: spec,
-                      onDismiss: onDismiss,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (presentation == PresentationMode.modal) {
-      return Positioned.fill(
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.45),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Center(
-              child: FractionallySizedBox(
-                heightFactor: 0.90,
-                widthFactor: 1,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: SpecRenderer(
-                    spec: spec,
-                    presentation: presentation,
-                    onCTA: onCTA,
-                    onDismiss: onDismiss,
-                    onError: onError,
-                    onReady: onReady,
-                  ),
-                ),
-              ),
             ),
           ),
         ),
       );
     }
 
-    return Positioned.fill(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onDismiss,
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.35),
-          alignment: Alignment.bottomCenter,
-          child: GestureDetector(
-            onTap: () {},
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: FractionallySizedBox(
-                  heightFactor: 0.86,
-                  widthFactor: 1,
-                  child: SpecRenderer(
-                    spec: spec,
-                    presentation: presentation,
-                    onCTA: onCTA,
-                    onDismiss: onDismiss,
-                    onError: onError,
-                    onReady: onReady,
-                  ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onDismiss,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.35),
+        alignment: Alignment.bottomCenter,
+        child: GestureDetector(
+          onTap: () {},
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FractionallySizedBox(
+                heightFactor: 0.86,
+                widthFactor: 1,
+                child: SpecRenderer(
+                  spec: spec,
+                  presentation: presentation,
+                  onCTA: onCTA,
+                  onDismiss: onDismiss,
+                  onError: onError,
+                  onReady: onReady,
                 ),
               ),
             ),
