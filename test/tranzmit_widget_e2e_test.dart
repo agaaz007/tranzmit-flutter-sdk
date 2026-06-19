@@ -226,6 +226,12 @@ void main() {
 
     expect(html, contains('tz-presentation-fullscreen'));
     expect(html, contains('data-tranzmit-presentation="fullscreen"'));
+    expect(
+      html,
+      contains(
+        'minimum-scale=1, maximum-scale=1, user-scalable=no',
+      ),
+    );
     expect(html, contains('--tz-vh: 915.00px'));
     expect(html, contains('--tz-safe-bottom: 18.00px'));
     expect(

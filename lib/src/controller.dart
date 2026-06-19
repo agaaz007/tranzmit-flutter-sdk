@@ -202,7 +202,7 @@ class TranzmitController extends ChangeNotifier {
     return completer.future;
   }
 
-  PreloadedPaywall? claimReadyPreloadForRoute(
+  PreloadedPaywall? claimPreloadForRoute(
     String trigger,
     PlacementConfig placement,
     PresentationMode presentation,
@@ -218,11 +218,19 @@ class TranzmitController extends ChangeNotifier {
       return null;
     }
 
-    if (preload.status != PreloadStatus.ready) return null;
-
     _preloadedPaywalls.remove(trigger);
     _notifyIfAlive();
     return preload;
+  }
+
+  PreloadedPaywall? claimReadyPreloadForRoute(
+    String trigger,
+    PlacementConfig placement,
+    PresentationMode presentation,
+  ) {
+    final preload = _preloadedPaywalls[trigger];
+    if (preload == null || preload.status != PreloadStatus.ready) return null;
+    return claimPreloadForRoute(trigger, placement, presentation);
   }
 
   GateResult gate(String trigger, [GateOptions options = const GateOptions()]) {
@@ -355,6 +363,23 @@ class TranzmitController extends ChangeNotifier {
     _notifyIfAlive();
   }
 
+  void markClaimedPreloadReady(PreloadedPaywall preload) {
+    if (preload.status == PreloadStatus.ready) return;
+
+    preload.status = PreloadStatus.ready;
+    preload.error = null;
+    if (!preload._completer.isCompleted) {
+      preload._completer.complete(
+        PreloadResult(
+          trigger: preload.trigger,
+          status: PreloadStatus.ready,
+          variantId: preload.variantId,
+        ),
+      );
+    }
+    _notifyIfAlive();
+  }
+
   void markPreloadFailed(String trigger, String key, Object error) {
     final preload = _preloadedPaywalls[trigger];
     if (preload == null || preload.key != key) return;
@@ -365,6 +390,24 @@ class TranzmitController extends ChangeNotifier {
       preload._completer.complete(
         PreloadResult(
           trigger: trigger,
+          status: PreloadStatus.failed,
+          variantId: preload.variantId,
+          error: error,
+        ),
+      );
+    }
+    _notifyIfAlive();
+  }
+
+  void markClaimedPreloadFailed(PreloadedPaywall preload, Object error) {
+    if (preload.status == PreloadStatus.failed) return;
+
+    preload.status = PreloadStatus.failed;
+    preload.error = error;
+    if (!preload._completer.isCompleted) {
+      preload._completer.complete(
+        PreloadResult(
+          trigger: preload.trigger,
           status: PreloadStatus.failed,
           variantId: preload.variantId,
           error: error,

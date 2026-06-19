@@ -305,6 +305,51 @@ void main() {
     expect(httpClient.requests, isEmpty);
   });
 
+  test('route presentations claim loading preloads and complete their future',
+      () async {
+    final httpClient = RecordingHttpClient();
+    final controller = TranzmitController(
+      TranzmitClient(
+        storage: MemoryTranzmitStorage(),
+        httpClient: httpClient,
+      ),
+    );
+    await controller.init(
+      const TranzmitConfig(
+        publicKey: 'pk_test_demo',
+        apiBaseUrl: 'https://example.test',
+      ),
+    );
+    await controller.flush();
+    httpClient.requests.clear();
+
+    final preloadFuture = controller.preloadPlacement('upgrade_pro');
+    final preload = controller.preloadedPaywalls.single;
+    expect(preload.status, PreloadStatus.loading);
+
+    final placement = controller.getPlacement('upgrade_pro')!;
+    final claimed = controller.claimPreloadForRoute(
+      'upgrade_pro',
+      placement,
+      PresentationMode.sheet,
+    );
+
+    expect(claimed, same(preload));
+    expect(controller.preloadedPaywalls, isEmpty);
+    var preloadCompleted = false;
+    unawaited(preloadFuture.then((_) => preloadCompleted = true));
+    await Future<void>.delayed(Duration.zero);
+    expect(preloadCompleted, isFalse);
+
+    controller.markClaimedPreloadReady(preload);
+    final preloadResult = await preloadFuture;
+    expect(preloadResult.ready, isTrue);
+    expect(preload.status, PreloadStatus.ready);
+
+    await controller.flush();
+    expect(httpClient.requests, isEmpty);
+  });
+
   test('refresh invalidates preloaded placements', () async {
     final httpClient = RecordingHttpClient();
     final controller = TranzmitController(

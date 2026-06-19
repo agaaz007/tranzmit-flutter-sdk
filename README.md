@@ -133,7 +133,7 @@ if (tranzmit.isReady) {
 
 Preloading does not send an impression and does not show UI. The impression event fires only when the app later presents the paywall.
 
-Both `Tranzmit.of(context).presentPlacement(...)` and `Tranzmit.presentPlacementInRoute(context, ...)` reuse a ready preload slot when one exists. Use the route API only when the app must show Flutter UI above the paywall after CTA, such as a checkout modal, terms dialog, snackbar, or pushed checkout screen.
+Both `Tranzmit.of(context).presentPlacement(...)` and `Tranzmit.presentPlacementInRoute(context, ...)` reuse a matching preload slot when one exists. If the preload is still loading, the route continues that in-flight WebView load instead of starting a new cold WebView. Use the route API only when the app must show Flutter UI above the paywall after CTA, such as a checkout modal, terms dialog, snackbar, or pushed checkout screen.
 
 ### Step 8: Present The Paywall At The Upgrade Moment
 

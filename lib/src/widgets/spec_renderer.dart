@@ -61,6 +61,7 @@ class _SpecRendererState extends State<SpecRenderer> {
   WebViewController _buildController() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..enableZoom(false)
       ..setBackgroundColor(Colors.transparent)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -585,7 +586,7 @@ String _composeDocument(
 <html class="$presentationClass" data-tranzmit-presentation="${presentation.name}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <style>
   :root {
 ${resolvedViewport.cssVariables}

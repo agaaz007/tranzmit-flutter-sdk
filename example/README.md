@@ -38,9 +38,9 @@ By default, the harness runs logged out and lets the SDK generate a `stableID`. 
 The harness includes two preload-specific buttons:
 
 - **Preload "upgrade_pro"** calls `Tranzmit.of(context).preloadPlacement(...)`. It does not show UI or send an impression.
-- **Present warmed "upgrade_pro"** calls the default provider-overlay `presentPlacement(...)`, which reuses a ready preload slot when one exists.
+- **Present warmed "upgrade_pro"** calls the default provider-overlay `presentPlacement(...)`, which reuses a matching preload slot when one exists.
 
-The regular **Present "upgrade_pro"** button uses `Tranzmit.presentPlacementInRoute(...)` to demo Flutter UI above the paywall after CTA. It also reuses a ready preload slot when one exists. Use that route path when the customer app needs dialogs, bottom sheets, snackbars, or pushed checkout screens above the paywall.
+The regular **Present "upgrade_pro"** button uses `Tranzmit.presentPlacementInRoute(...)` to demo Flutter UI above the paywall after CTA. It also reuses a matching preload slot when one exists, including a preload that is still loading. Use that route path when the customer app needs dialogs, bottom sheets, snackbars, or pushed checkout screens above the paywall.
 
 ## Purchase ownership
 

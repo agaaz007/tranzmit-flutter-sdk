@@ -36,7 +36,7 @@ GateResult presentPaywallRoute({
   final navigator = Navigator.of(context);
   final resolvedPresentation =
       presentation ?? _presentationFromSpec(placement.spec);
-  final claimedPreload = controller.claimReadyPreloadForRoute(
+  final claimedPreload = controller.claimPreloadForRoute(
     trigger,
     placement,
     resolvedPresentation,
@@ -55,6 +55,13 @@ GateResult presentPaywallRoute({
   void completeRoute() {
     if (completed) return;
     completed = true;
+    final preload = claimedPreload;
+    if (preload != null && preload.status == PreloadStatus.loading) {
+      controller.markClaimedPreloadFailed(
+        preload,
+        StateError('Paywall dismissed before preload completed'),
+      );
+    }
     if (renderFailed) return;
 
     controller.track('dismissal', {
@@ -74,6 +81,10 @@ GateResult presentPaywallRoute({
 
   void handleError(Object error) {
     renderFailed = true;
+    final preload = claimedPreload;
+    if (preload != null) {
+      controller.markClaimedPreloadFailed(preload, error);
+    }
     controller.track('paywall_error', {
       ...attribution(trigger, placement),
       'reason': 'render_error',
@@ -114,8 +125,7 @@ GateResult presentPaywallRoute({
               onCTA: handleCTA,
               onDismiss: removeRoute,
               onError: handleError,
-              onReady: () =>
-                  controller.markPreloadReady(preload.trigger, preload.key),
+              onReady: () => controller.markClaimedPreloadReady(preload),
             ),
         ],
       );
