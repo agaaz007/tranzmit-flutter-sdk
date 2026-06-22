@@ -174,7 +174,7 @@ class _SpecRendererState extends State<SpecRenderer> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                const _DocumentLoadingView(),
+                if (!_isDocumentVisible) const _DocumentLoadingView(),
                 AnimatedOpacity(
                   opacity: _isDocumentVisible ? 1 : 0,
                   duration: const Duration(milliseconds: 140),
