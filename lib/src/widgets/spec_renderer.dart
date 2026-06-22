@@ -32,6 +32,7 @@ class SpecRenderer extends StatefulWidget {
 class _SpecRendererState extends State<SpecRenderer> {
   late final WebViewController _controller;
   String? _lastLoadedSignature;
+  String? _lastViewportSignature;
   String? _lastReportedErrorSignature;
   bool _allowDocumentNavigation = false;
   bool _isDocumentVisible = false;
@@ -53,6 +54,7 @@ class _SpecRendererState extends State<SpecRenderer> {
         oldWidget.spec.document?.css != widget.spec.document?.css ||
         oldWidget.spec.document?.js != widget.spec.document?.js) {
       _lastLoadedSignature = null;
+      _lastViewportSignature = null;
       _isDocumentVisible = false;
       _reportedReady = false;
     }
@@ -193,10 +195,17 @@ class _SpecRendererState extends State<SpecRenderer> {
   }
 
   void _scheduleDocumentLoad(PaywallViewport viewport) {
-    final signature =
-        _documentSignature(widget.spec, widget.presentation, viewport);
-    if (_lastLoadedSignature == signature) return;
+    final signature = _documentSignature(widget.spec, widget.presentation);
+    final viewportSignature = viewport.signature;
+    if (_lastLoadedSignature == signature) {
+      if (_lastViewportSignature != viewportSignature) {
+        _lastViewportSignature = viewportSignature;
+        if (_isDocumentVisible) _updateDocumentViewport(viewport);
+      }
+      return;
+    }
     _lastLoadedSignature = signature;
+    _lastViewportSignature = viewportSignature;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastLoadedSignature != signature) return;
       if (_isDocumentVisible) {
@@ -222,6 +231,26 @@ class _SpecRendererState extends State<SpecRenderer> {
     });
   }
 
+  void _updateDocumentViewport(PaywallViewport viewport) {
+    final viewportJson = jsonEncode(viewport.toJson());
+    final cssVariablesJson = jsonEncode(viewport.cssVariableValues);
+    unawaited(
+      _controller.runJavaScript('''
+(function() {
+  window.TranzmitNativeViewport = $viewportJson;
+  var vars = $cssVariablesJson;
+  var root = document.documentElement;
+  Object.keys(vars).forEach(function(key) {
+    root.style.setProperty(key, vars[key]);
+  });
+  window.dispatchEvent(new CustomEvent('tranzmitviewportchange', {
+    detail: window.TranzmitNativeViewport
+  }));
+})();
+''').catchError((Object error) {}),
+    );
+  }
+
   void _reportRenderError(Object error) {
     final signature = [
       widget.spec.cacheKey,
@@ -240,7 +269,6 @@ class _SpecRendererState extends State<SpecRenderer> {
   String _documentSignature(
     PaywallSpec spec,
     PresentationMode presentation,
-    PaywallViewport viewport,
   ) {
     return [
       presentation.name,
@@ -250,7 +278,6 @@ class _SpecRendererState extends State<SpecRenderer> {
       spec.document?.html,
       spec.document?.css,
       spec.document?.js,
-      viewport.signature,
     ].join('|');
   }
 
@@ -361,6 +388,20 @@ class PaywallViewport {
   --tz-scale: ${scale.toStringAsFixed(4)};
   --tz-cta-reserved-height: clamp(86px, 10.5vh, 108px);
 ''';
+
+  Map<String, String> get cssVariableValues => {
+        '--tz-container-width': '${width.toStringAsFixed(2)}px',
+        '--tz-container-height': '${height.toStringAsFixed(2)}px',
+        '--tz-vw': '${width.toStringAsFixed(2)}px',
+        '--tz-vh': '${height.toStringAsFixed(2)}px',
+        '--tz-safe-top': '${safeTop.toStringAsFixed(2)}px',
+        '--tz-safe-bottom': '${safeBottom.toStringAsFixed(2)}px',
+        '--tz-safe-left': '${safeLeft.toStringAsFixed(2)}px',
+        '--tz-safe-right': '${safeRight.toStringAsFixed(2)}px',
+        '--tz-device-pixel-ratio': pixelRatio.toStringAsFixed(3),
+        '--tz-scale': scale.toStringAsFixed(4),
+        '--tz-cta-reserved-height': 'clamp(86px, 10.5vh, 108px)',
+      };
 
   double get scale {
     final widthScale = width / 390;
