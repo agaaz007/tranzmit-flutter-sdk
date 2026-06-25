@@ -8,6 +8,11 @@ import 'models.dart';
 import 'provider.dart';
 import 'widgets/spec_renderer.dart';
 
+const _paywallRouteTransitionDuration = Duration(milliseconds: 220);
+const _paywallRouteReverseTransitionDuration = Duration(milliseconds: 170);
+const _paywallRouteTransitionKey =
+    ValueKey<String>('tranzmit_paywall_route_transition');
+
 GateResult presentPaywallRoute({
   required BuildContext context,
   required TranzmitController controller,
@@ -17,6 +22,8 @@ GateResult presentPaywallRoute({
   VoidCallback? onDismiss,
   void Function(FallbackEvent event)? onFallback,
   VoidCallback? onImpression,
+  Duration? transitionDuration,
+  Duration? reverseTransitionDuration,
 }) {
   if (!controller.isReady) {
     onFallback?.call(
@@ -49,7 +56,13 @@ GateResult presentPaywallRoute({
 
   void removeRoute() {
     if (completed || !route.isActive) return;
-    route.navigator?.removeRoute(route);
+    final navigator = route.navigator;
+    if (navigator == null) return;
+    if (route.isCurrent) {
+      navigator.pop();
+      return;
+    }
+    navigator.removeRoute(route);
   }
 
   void completeRoute() {
@@ -105,6 +118,9 @@ GateResult presentPaywallRoute({
   route = PageRouteBuilder<void>(
     opaque: false,
     barrierColor: Colors.transparent,
+    transitionDuration: transitionDuration ?? _paywallRouteTransitionDuration,
+    reverseTransitionDuration:
+        reverseTransitionDuration ?? _paywallRouteReverseTransitionDuration,
     pageBuilder: (routeContext, animation, secondaryAnimation) {
       final preload = claimedPreload;
       return Stack(
@@ -128,6 +144,17 @@ GateResult presentPaywallRoute({
               onReady: () => controller.markClaimedPreloadReady(preload),
             ),
         ],
+      );
+    },
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        key: _paywallRouteTransitionKey,
+        opacity: CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        ),
+        child: child,
       );
     },
   );

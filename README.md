@@ -251,7 +251,7 @@ Use `Tranzmit.presentPlacementInRoute(...)` only when the app must show Flutter 
 - Snackbars/toasts attached to the app scaffold.
 - A pushed payment or checkout screen.
 
-The route API presents that paywall through the app's `Navigator`, so UI opened later from `onCTA` appears above the paywall instead of behind it.
+The route API presents that paywall through the app's `Navigator`, so UI opened later from `onCTA` appears above the paywall instead of behind it. It fades the paywall in and out by default. To match the host app's motion system, pass optional `transitionDuration` and `reverseTransitionDuration` values; omit them to use the SDK defaults.
 
 ```dart
 final tranzmit = Tranzmit.of(context);
@@ -260,6 +260,8 @@ late final GateResult result;
 result = Tranzmit.presentPlacementInRoute(
   context,
   'upgrade_pro',
+  transitionDuration: const Duration(milliseconds: 250),
+  reverseTransitionDuration: const Duration(milliseconds: 180),
   onCTA: (product) async {
     final acceptedTerms = await showDialog<bool>(
       context: context,
@@ -516,7 +518,7 @@ This keeps purchases, restores, refunds, subscriptions, and entitlements under t
 
 CTA taps are callbacks, not redirects. Hosted paywall documents should call `window.Tranzmit.cta(productId)` or mark the CTA with `data-tranzmit-action="cta"`. The SDK also intercepts common hosted CTA links/buttons and prevents WebView navigation, so a CTA like `<a class="cta" href="...">Start Free Trial</a>` invokes `onCTA` instead of sending the user to a blank in-app WebView page. The SDK keeps the paywall visible on CTA; call `result.dismiss()` from the host app after checkout succeeds or when the host app wants to close it.
 
-If `onCTA` opens Flutter UI that must appear above the paywall, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement. This includes terms and conditions popups, payment bottom sheets, error dialogs, snackbars, and pushed checkout screens. Otherwise, keep using the default `Tranzmit.of(context).presentPlacement(...)`.
+If `onCTA` opens Flutter UI that must appear above the paywall, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement. This includes terms and conditions popups, payment bottom sheets, error dialogs, snackbars, and pushed checkout screens. The route fades in and out by default; pass `transitionDuration` and `reverseTransitionDuration` to customize the timing for that placement. Otherwise, keep using the default `Tranzmit.of(context).presentPlacement(...)`.
 
 Preloaded warm slots are reused by both the default provider-overlay `presentPlacement()` path and the Navigator route `presentPlacementInRoute()` path. The route API is still for special layering cases and should only be used when the app needs Flutter UI above the paywall while it is still visible.
 
