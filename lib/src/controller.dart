@@ -50,6 +50,7 @@ class GateOptions {
     this.onDismiss,
     this.onFallback,
     this.onImpression,
+    this.transitionDuration,
   });
 
   final PresentationMode? presentation;
@@ -57,6 +58,7 @@ class GateOptions {
   final VoidCallback? onDismiss;
   final void Function(FallbackEvent event)? onFallback;
   final VoidCallback? onImpression;
+  final Duration? transitionDuration;
 }
 
 class GateResult {
@@ -297,6 +299,7 @@ class TranzmitController extends ChangeNotifier {
     VoidCallback? onDismiss,
     void Function(FallbackEvent event)? onFallback,
     VoidCallback? onImpression,
+    Duration? transitionDuration,
   }) {
     return gate(
       trigger,
@@ -306,6 +309,7 @@ class TranzmitController extends ChangeNotifier {
         onDismiss: onDismiss,
         onFallback: onFallback,
         onImpression: onImpression,
+        transitionDuration: transitionDuration,
       ),
     );
   }

@@ -117,6 +117,7 @@ final tranzmit = Tranzmit.of(context);
 late final GateResult result;
 result = tranzmit.presentPlacement(
   'upgrade_pro',
+  transitionDuration: const Duration(milliseconds: 250),
   onCTA: (product) async {
     // product.id is the Billing Product ID configured in Tranzmit.
     await purchaseProduct(product.id);
@@ -187,9 +188,9 @@ reuses any ready slot created by `preloadPlacement()`.
 Use `Tranzmit.presentPlacementInRoute(...)` only when the host app must show
 Flutter UI above the paywall after the hosted CTA is tapped, while the paywall
 is still visible. This includes terms and conditions popups, payment bottom
-sheets, error/retry dialogs, snackbars, and pushed checkout screens. The route
-fades in and out by default. If the host app needs different motion timing, pass
-`transitionDuration` and `reverseTransitionDuration` for that placement.
+sheets, error/retry dialogs, snackbars, and pushed checkout screens. Both
+presentation APIs fade the paywall in by default. If the host app needs
+different appearance timing, pass `transitionDuration` for that placement.
 
 ```dart
 final tranzmit = Tranzmit.of(context);
@@ -199,7 +200,6 @@ result = Tranzmit.presentPlacementInRoute(
   context,
   'upgrade_pro',
   transitionDuration: const Duration(milliseconds: 250),
-  reverseTransitionDuration: const Duration(milliseconds: 180),
   onCTA: (product) async {
     final acceptedTerms = await showDialog<bool>(
       context: context,
@@ -462,9 +462,9 @@ screen, use `Tranzmit.presentPlacementInRoute(context, ...)` for that placement
 instead of the default `Tranzmit.of(context).presentPlacement(...)`. A ready
 `preloadPlacement()` slot is reused by this route path too, including when the
 preload is still loading, so these flows can avoid restarting a cold WebView. Do
-not use the route API unless the host app needs that layering behavior. The
-route uses SDK-default fade timing unless the host app passes
-`transitionDuration` or `reverseTransitionDuration` on the route call.
+not use the route API unless the host app needs that layering behavior. Both
+presentation APIs use SDK-default fade-in timing unless the host app passes
+`transitionDuration` on the placement call.
 
 ## Native Billing
 

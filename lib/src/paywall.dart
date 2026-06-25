@@ -12,6 +12,8 @@ const _paywallRouteTransitionDuration = Duration(milliseconds: 220);
 const _paywallRouteReverseTransitionDuration = Duration(milliseconds: 170);
 const _paywallRouteTransitionKey =
     ValueKey<String>('tranzmit_paywall_route_transition');
+const _paywallOverlayTransitionKey =
+    ValueKey<String>('tranzmit_paywall_overlay_transition');
 
 GateResult presentPaywallRoute({
   required BuildContext context,
@@ -23,7 +25,6 @@ GateResult presentPaywallRoute({
   void Function(FallbackEvent event)? onFallback,
   VoidCallback? onImpression,
   Duration? transitionDuration,
-  Duration? reverseTransitionDuration,
 }) {
   if (!controller.isReady) {
     onFallback?.call(
@@ -119,8 +120,7 @@ GateResult presentPaywallRoute({
     opaque: false,
     barrierColor: Colors.transparent,
     transitionDuration: transitionDuration ?? _paywallRouteTransitionDuration,
-    reverseTransitionDuration:
-        reverseTransitionDuration ?? _paywallRouteReverseTransitionDuration,
+    reverseTransitionDuration: _paywallRouteReverseTransitionDuration,
     pageBuilder: (routeContext, animation, secondaryAnimation) {
       final preload = claimedPreload;
       return Stack(
@@ -222,6 +222,9 @@ class TranzmitPaywallHost extends StatelessWidget {
                   return _WarmPaywallSlot(
                     preload: preload,
                     visible: true,
+                    appearanceTransitionDuration:
+                        active.options.transitionDuration ??
+                            _paywallRouteTransitionDuration,
                     onCTA: (product) => controller.handleCTA(active, product),
                     onDismiss: () => controller.dismissPaywall(active.id),
                     onError: (error) =>
@@ -248,6 +251,36 @@ class TranzmitPaywallHost extends StatelessWidget {
   }
 }
 
+class _PaywallAppearanceTransition extends StatelessWidget {
+  const _PaywallAppearanceTransition({
+    required this.duration,
+    required this.child,
+  });
+
+  final Duration? duration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedDuration = duration ?? _paywallRouteTransitionDuration;
+    if (resolvedDuration == Duration.zero) return child;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: resolvedDuration,
+      curve: Curves.easeOutCubic,
+      builder: (context, opacity, child) {
+        return Opacity(
+          key: _paywallOverlayTransitionKey,
+          opacity: opacity,
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+}
+
 class _WarmPaywallSlot extends StatelessWidget {
   const _WarmPaywallSlot({
     required this.preload,
@@ -256,6 +289,7 @@ class _WarmPaywallSlot extends StatelessWidget {
     required this.onDismiss,
     required this.onError,
     required this.onReady,
+    this.appearanceTransitionDuration,
   });
 
   final PreloadedPaywall preload;
@@ -264,6 +298,7 @@ class _WarmPaywallSlot extends StatelessWidget {
   final VoidCallback onDismiss;
   final void Function(Object error) onError;
   final VoidCallback onReady;
+  final Duration? appearanceTransitionDuration;
 
   @override
   Widget build(BuildContext context) {
@@ -288,11 +323,18 @@ class _WarmPaywallSlot extends StatelessWidget {
       ),
     );
 
+    final presentedContent = visible
+        ? _PaywallAppearanceTransition(
+            duration: appearanceTransitionDuration,
+            child: content,
+          )
+        : content;
+
     if (preload.presentation == PresentationMode.inline) {
-      return content;
+      return presentedContent;
     }
 
-    return Positioned.fill(child: content);
+    return Positioned.fill(child: presentedContent);
   }
 }
 
@@ -403,6 +445,8 @@ class _PresentedPaywall extends StatelessWidget {
       onCTA: onCTA,
       onDismiss: onDismiss,
       onError: onError,
+      appearanceTransitionDuration:
+          active.options.transitionDuration ?? _paywallRouteTransitionDuration,
     );
   }
 }
@@ -414,6 +458,7 @@ class _PresentedSpec extends StatelessWidget {
     required this.onCTA,
     required this.onDismiss,
     this.onError,
+    this.appearanceTransitionDuration,
   });
 
   final PaywallSpec spec;
@@ -421,16 +466,24 @@ class _PresentedSpec extends StatelessWidget {
   final void Function(ProductSpec product) onCTA;
   final VoidCallback onDismiss;
   final void Function(Object error)? onError;
+  final Duration? appearanceTransitionDuration;
 
   @override
   Widget build(BuildContext context) {
-    final body = _PresentedSpecBody(
+    Widget body = _PresentedSpecBody(
       spec: spec,
       presentation: presentation,
       onCTA: onCTA,
       onDismiss: onDismiss,
       onError: onError,
     );
+
+    if (appearanceTransitionDuration != null) {
+      body = _PaywallAppearanceTransition(
+        duration: appearanceTransitionDuration,
+        child: body,
+      );
+    }
 
     if (presentation == PresentationMode.inline) {
       return body;

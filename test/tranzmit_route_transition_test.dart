@@ -9,6 +9,8 @@ import 'package:webview_flutter_platform_interface/webview_flutter_platform_inte
 const _fakeWebViewKey = Key('fake-webview');
 const _paywallRouteTransitionKey =
     ValueKey<String>('tranzmit_paywall_route_transition');
+const _paywallOverlayTransitionKey =
+    ValueKey<String>('tranzmit_paywall_overlay_transition');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +19,7 @@ void main() {
     WebViewPlatform.instance = _FakeWebViewPlatform();
   });
 
-  testWidgets('route paywall honors custom transition durations',
+  testWidgets('route paywall honors custom appearance transition duration',
       (tester) async {
     final controller = TranzmitController(
       TranzmitClient(
@@ -49,8 +51,6 @@ void main() {
                         'upgrade_pro',
                         presentation: PresentationMode.fullscreen,
                         transitionDuration: const Duration(milliseconds: 400),
-                        reverseTransitionDuration:
-                            const Duration(milliseconds: 300),
                       );
                     },
                     child: const Text('Present paywall'),
@@ -79,16 +79,79 @@ void main() {
     expect(_routeFadeTransition(tester).opacity.value, 1);
 
     result!.dismiss();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 180));
-
-    expect(find.byKey(_fakeWebViewKey), findsOneWidget);
-    expect(_routeFadeTransition(tester).opacity.value, lessThan(1));
-
     await tester.pumpAndSettle();
+
     expect(find.byKey(_fakeWebViewKey), findsNothing);
 
     await controller.flush();
+  });
+
+  testWidgets('provider overlay paywall honors custom appearance duration',
+      (tester) async {
+    TranzmitController? controller;
+    GateResult? result;
+
+    await tester.pumpWidget(
+      TranzmitProvider(
+        config: const TranzmitConfig(
+          publicKey: 'pk_test_demo',
+          apiBaseUrl: 'https://example.test',
+        ),
+        client: TranzmitClient(
+          storage: MemoryTranzmitStorage(),
+          httpClient: _ConfigHttpClient(),
+        ),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) {
+              controller = Tranzmit.of(context);
+              return Scaffold(
+                body: Center(
+                  child: FilledButton(
+                    key: const Key('present-overlay-paywall'),
+                    onPressed: () {
+                      result = controller!.presentPlacement(
+                        'upgrade_pro',
+                        presentation: PresentationMode.fullscreen,
+                        transitionDuration: const Duration(milliseconds: 400),
+                      );
+                    },
+                    child: const Text('Present paywall'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _pumpUntil(
+      tester,
+      () => controller?.isReady == true,
+      reason: 'SDK did not become ready',
+    );
+
+    await tester.tap(find.byKey(const Key('present-overlay-paywall')));
+    await tester.pump();
+
+    expect(result?.shown, isTrue);
+    await tester.pump();
+
+    expect(find.byKey(_fakeWebViewKey), findsOneWidget);
+    expect(_overlayFadeOpacity(tester).opacity, lessThan(1));
+
+    await tester.pump(const Duration(milliseconds: 230));
+    expect(_overlayFadeOpacity(tester).opacity, lessThan(1));
+
+    await tester.pumpAndSettle();
+    expect(_overlayFadeOpacity(tester).opacity, 1);
+
+    result!.dismiss();
+    await tester.pump();
+    expect(find.byKey(_fakeWebViewKey), findsNothing);
+
+    await controller?.flush();
   });
 }
 
@@ -96,6 +159,24 @@ FadeTransition _routeFadeTransition(WidgetTester tester) {
   return tester.widget<FadeTransition>(
     find.byKey(_paywallRouteTransitionKey),
   );
+}
+
+Opacity _overlayFadeOpacity(WidgetTester tester) {
+  return tester.widget<Opacity>(
+    find.byKey(_paywallOverlayTransitionKey),
+  );
+}
+
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  required String reason,
+}) async {
+  for (var i = 0; i < 40; i++) {
+    if (condition()) return;
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+  fail(reason);
 }
 
 class _ConfigHttpClient extends http.BaseClient {

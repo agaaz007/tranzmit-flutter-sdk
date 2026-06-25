@@ -135,7 +135,6 @@ class Tranzmit extends InheritedNotifier<TranzmitController> {
     void Function(FallbackEvent event)? onFallback,
     VoidCallback? onImpression,
     Duration? transitionDuration,
-    Duration? reverseTransitionDuration,
   }) {
     return presentPaywallRoute(
       context: context,
@@ -147,7 +146,6 @@ class Tranzmit extends InheritedNotifier<TranzmitController> {
       onFallback: onFallback,
       onImpression: onImpression,
       transitionDuration: transitionDuration,
-      reverseTransitionDuration: reverseTransitionDuration,
     );
   }
 }
