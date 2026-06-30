@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart';
 
 import 'client.dart';
 import 'models.dart';
+import 'presentation_mode.dart';
 
-enum PresentationMode { modal, sheet, fullscreen, inline }
+export 'presentation_mode.dart';
 
 enum FallbackReason { notReady, placementNotFound, renderError }
 
