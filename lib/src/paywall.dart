@@ -117,7 +117,13 @@ GateResult presentPaywallRoute({
   }
 
   route = PageRouteBuilder<void>(
-    opaque: false,
+    // Fullscreen paywalls cover the whole screen, so the route must be opaque:
+    // a non-opaque route keeps the app screen painted underneath, and the
+    // native WebView platform view doesn't paint its last physical edge pixel
+    // (see hostedDocumentBackdropColor note in spec_renderer.dart), so the app
+    // bleeds through as a thin line at the right/bottom edges. Modal/sheet stay
+    // non-opaque because they are partial overlays that show a scrim behind.
+    opaque: resolvedPresentation == PresentationMode.fullscreen,
     barrierColor: Colors.transparent,
     transitionDuration: transitionDuration ?? _paywallRouteTransitionDuration,
     reverseTransitionDuration: _paywallRouteReverseTransitionDuration,
